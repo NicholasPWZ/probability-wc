@@ -1,0 +1,9 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+curl_cffi>=0.7.0
+google-genai>=0.3.0
+pydantic>=2.6
+pydantic-settings>=2.2
+jinja2>=3.1
+python-dotenv>=1.0
+tzdata>=2024.1  # IANA tz database (required on Windows; harmless on Linux)

@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Bet Stats — Copa do Mundo 2026</title>
+<style>
+  :root {
+    --bg:#0a0e14; --panel:#141b26; --panel2:#1a2434; --border:#283449;
+    --text:#e8eef6; --muted:#8595a8; --accent:#3fd07a; --accent2:#5aa9ff;
+    --accent3:#b07dff; --warn:#f0b429; --bad:#ff6b6b;
+    --grad:linear-gradient(120deg,#5aa9ff 0%,#b07dff 60%,#3fd07a 120%);
+    --shadow:0 4px 16px rgba(0,0,0,.35);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;
+         background:
+           radial-gradient(900px 500px at 100% -10%, rgba(90,169,255,.10), transparent 60%),
+           radial-gradient(800px 500px at -10% 0%, rgba(176,125,255,.10), transparent 55%),
+           var(--bg);
+         background-attachment:fixed; color:var(--text); -webkit-text-size-adjust:100%; }
+  header { padding:16px 20px; border-bottom:1px solid var(--border); position:sticky; top:0;
+           background:rgba(10,14,20,.82); backdrop-filter:blur(10px); z-index:5; }
+  h1 { font-size:20px; margin:0; font-weight:700; letter-spacing:-.02em;
+       background:var(--grad); -webkit-background-clip:text; background-clip:text;
+       -webkit-text-fill-color:transparent; }
+  .sub { color:var(--muted); font-size:13px; margin-top:4px; }
+  nav { display:flex; gap:8px; margin-top:12px; }
+  nav button { flex:0 0 auto; border-radius:999px; }
+  nav button.active { background:var(--grad); color:#07101f; border-color:transparent;
+                      font-weight:700; box-shadow:0 2px 10px rgba(90,169,255,.35); }
+  main { max-width:1000px; margin:0 auto; padding:18px 14px 60px; }
+  .day { margin:22px 0 10px; font-size:13px; color:var(--accent2); font-weight:700; text-transform:uppercase;
+         letter-spacing:.06em; display:flex; align-items:center; gap:10px; }
+  .day::after { content:""; flex:1; height:1px; background:linear-gradient(90deg,var(--border),transparent); }
+  .match { background:var(--panel); border:1px solid var(--border); border-radius:12px; margin:9px 0;
+           overflow:hidden; transition:border-color .15s, transform .1s, box-shadow .15s; }
+  .match:hover { border-color:#3a4a64; box-shadow:var(--shadow); }
+  .match.open { border-color:var(--accent2); box-shadow:0 0 0 1px rgba(90,169,255,.25), var(--shadow); }
+  .match-head { display:flex; align-items:center; gap:10px; padding:13px 15px; cursor:pointer; }
+  .match-head:hover { background:var(--panel2); }
+  .time { font-variant-numeric:tabular-nums; color:var(--text); width:46px; font-size:14px; font-weight:600;
+          flex:0 0 auto; opacity:.85; }
+  .teams { flex:1; font-weight:600; min-width:0; }
+  .group { color:var(--muted); font-size:12px; flex:0 0 auto; }
+  .status { font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; background:var(--panel2);
+            color:var(--muted); border:1px solid var(--border); flex:0 0 auto; }
+  .status:not(:empty) { color:var(--accent2); border-color:rgba(90,169,255,.4); background:rgba(90,169,255,.08); }
+  .status.live { color:var(--bad); border-color:var(--bad); background:rgba(255,107,107,.12);
+                 animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.55; } }
+  .chev { color:var(--muted); transition:transform .15s; flex:0 0 auto; font-size:18px; }
+  .match.open .chev { transform:rotate(90deg); color:var(--accent2); }
+  .detail { display:none; padding:0 14px 16px; border-top:1px solid var(--border); }
+  .match.open .detail { display:block; }
+  .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:12px 0; }
+  button { font:inherit; border:1px solid var(--border); background:var(--panel2); color:var(--text);
+           padding:7px 13px; border-radius:8px; cursor:pointer; transition:border-color .15s, background .15s; }
+  button:hover:not(:disabled) { border-color:var(--accent2); background:#212d40; }
+  button:disabled { opacity:.4; cursor:default; }
+  button.primary { background:var(--grad); color:#07101f; border-color:transparent; font-weight:700;
+                   box-shadow:0 2px 10px rgba(176,125,255,.3); }
+  .badge { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; border:1px solid var(--border); }
+  .badge.ok { color:var(--accent); border-color:rgba(63,208,122,.45); background:rgba(63,208,122,.1); }
+  .badge.prov { color:var(--warn); border-color:rgba(240,180,41,.45); background:rgba(240,180,41,.1); }
+  .pill { font-size:11px; padding:3px 10px; border-radius:20px; border:1px solid var(--border); color:var(--muted);
+          background:var(--panel); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:14px; }
+  .card { background:linear-gradient(180deg,var(--panel2),var(--panel)); border:1px solid var(--border);
+          border-radius:12px; padding:14px 15px; box-shadow:var(--shadow); }
+  .card h3 { margin:0 0 11px; font-size:12px; color:var(--accent2); text-transform:uppercase; letter-spacing:.06em;
+             font-weight:700; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  .scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:5px 6px; border-bottom:1px solid rgba(40,52,73,.6); white-space:nowrap; }
+  tr:last-child td { border-bottom:none; }
+  tbody tr:hover td, table tr:hover td { background:rgba(90,169,255,.04); }
+  th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+  td.p, th.p { text-align:right; font-variant-numeric:tabular-nums; }
+  .three { display:flex; gap:8px; flex-wrap:wrap; }
+  .three div { flex:1 1 0; min-width:72px; text-align:center;
+               background:linear-gradient(180deg,var(--panel),#10161f); border:1px solid var(--border);
+               border-radius:10px; padding:10px 6px; }
+  .three .v { font-size:19px; font-weight:800; letter-spacing:-.02em; }
+  .three .l { font-size:10.5px; color:var(--muted); margin-top:2px; }
+  .pbar { display:flex; height:8px; border-radius:6px; overflow:hidden; margin:10px 0 4px; border:1px solid var(--border); }
+  .pbar i { display:block; height:100%; }
+  .conf-low { color:var(--bad)!important; } .conf-medium { color:var(--warn)!important; } .conf-high { color:var(--accent)!important; }
+  .muted { color:var(--muted); font-size:12px; }
+  .err { color:var(--bad); font-size:13px; }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--muted); border-top-color:transparent;
+          border-radius:50%; animation:s .7s linear infinite; vertical-align:-2px; }
+  @keyframes s { to { transform:rotate(360deg); } }
+  .ml { font-size:12px; margin:3px 0; }
+  .ml .mlk { color:var(--muted); }
+  .ml b { color:var(--accent); font-weight:600; }
+  .mlbox { margin-top:10px; padding-top:8px; border-top:1px dashed var(--border); }
+  .mlbox .h { font-size:11px; color:var(--accent2); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
+  .gemini { background:var(--panel); border:1px solid var(--accent); border-radius:9px; padding:12px 14px; margin-top:12px; }
+  .gemini h3 { color:var(--accent); margin:0 0 8px; font-size:14px; }
+  .gemini li { margin:4px 0; }
+  .ref { background:linear-gradient(90deg,rgba(240,180,41,.08),transparent); border:1px solid var(--border);
+         border-left:3px solid var(--warn); border-radius:9px; padding:10px 14px; margin-top:10px; font-size:13px; }
+  ::selection { background:rgba(90,169,255,.3); }
+  .scroll::-webkit-scrollbar { height:8px; width:8px; }
+  .scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:8px; }
+  .scroll::-webkit-scrollbar-thumb:hover { background:#3a4a64; }
+  details.players summary { cursor:pointer; color:var(--accent2); font-size:13px; margin-top:6px; }
+  @media (max-width:640px) {
+    header { padding:12px 14px; }
+    h1 { font-size:16px; }
+    main { padding:14px 10px 50px; }
+    .grid { grid-template-columns:1fr; }
+    .group { display:none; }
+    .match-head { gap:8px; padding:11px 12px; }
+    .teams { font-size:14px; }
+    table { font-size:12px; }
+    th,td { padding:4px 5px; }
+    .three .v { font-size:16px; }
+    nav { overflow-x:auto; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚽ Bet Stats — Copa do Mundo 2026</h1>
+  <div class="sub">Probabilidades calculadas. Horários no fuso de Brasília.</div>
+  <nav>
+    <button id="nav-matches" class="active" onclick="showView('matches')">Jogos</button>
+    <button id="nav-dash" onclick="showView('dashboard')">📊 Desempenho do modelo</button>
+  </nav>
+</header>
+<main>
+  <div id="view-matches"><p class="muted"><span class="spin"></span> Carregando jogos…</p></div>
+  <div id="view-dashboard" style="display:none"></div>
+</main>
+
+<script>
+const BASE = "";
+const pct = p => (p == null ? "–" : (p * 100).toFixed(1) + "%");
+// heat color: red (low) -> amber (~50%) -> green (high)
+function pColor(p) {
+  if (p == null) return "var(--muted)";
+  const hue = Math.max(0, Math.min(1, p)) * 135;       // 0=red .. 135=green
+  return `hsl(${hue.toFixed(0)},78%,62%)`;
+}
+// colored probability cell text
+const pc = p => p == null ? '<span class="muted">–</span>'
+  : `<span style="color:${pColor(p)};font-weight:600">${(p * 100).toFixed(1)}%</span>`;
+const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; };
+const chk = c => c == null ? '<span class="muted">–</span>' : (c ? '<span style="color:var(--accent)">✓</span>' : '<span style="color:var(--bad)">✗</span>');
+let GEMINI_ENABLED = false;
+
+async function api(path, opts) {
+  const r = await fetch(BASE + path, opts);
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || ("HTTP " + r.status)); }
+  return r.json();
+}
+
+function showView(v) {
+  document.getElementById("view-matches").style.display = v === "matches" ? "" : "none";
+  document.getElementById("view-dashboard").style.display = v === "dashboard" ? "" : "none";
+  document.getElementById("nav-matches").classList.toggle("active", v === "matches");
+  document.getElementById("nav-dash").classList.toggle("active", v === "dashboard");
+  if (v === "dashboard") loadDashboard();
+}
+
+// ---------- matches ----------
+async function boot() {
+  try { GEMINI_ENABLED = (await api("/api/config")).geminiEnabled; } catch {}
+  const root = document.getElementById("view-matches");
+  try {
+    const { days } = await api("/api/matches");
+    root.innerHTML = "";
+    if (!days.length) { root.innerHTML = '<p class="muted">Nenhum jogo encontrado.</p>'; return; }
+    for (const day of days) {
+      root.appendChild(el("div", "day", day.label));
+      for (const m of day.matches) root.appendChild(matchRow(m));
+    }
+  } catch (e) {
+    root.innerHTML = '<p class="err">Falha ao carregar jogos: ' + e.message + '</p>';
+  }
+}
+
+function matchRow(m) {
+  const wrap = el("div", "match"); wrap.dataset.id = m.id;
+  const statusCls = m.statusType === "inprogress" ? "live" : "";
+  const head = el("div", "match-head");
+  head.innerHTML = `
+    <span class="time">${m.time || "--:--"}</span>
+    <span class="teams">${m.home ?? "?"} <span class="muted">x</span> ${m.away ?? "?"}</span>
+    ${m.group ? `<span class="group">${m.group}</span>` : ""}
+    <span class="status ${statusCls}">${m.statusText || ""}</span>
+    <span class="chev">›</span>`;
+  const detail = el("div", "detail", '<p class="muted">Clique para analisar.</p>');
+  head.onclick = () => {
+    wrap.classList.toggle("open");
+    if (wrap.classList.contains("open") && !wrap.dataset.loaded) loadAnalysis(wrap, detail, m.id);
+  };
+  wrap.append(head, detail);
+  return wrap;
+}
+
+async function loadAnalysis(wrap, detail, id) {
+  wrap.dataset.loaded = "1";
+  detail.innerHTML = '<p class="muted"><span class="spin"></span> Coletando estatísticas e calculando…</p>';
+  try { renderAnalysis(detail, id, await api("/api/analyze/" + id)); }
+  catch (e) { wrap.dataset.loaded = ""; detail.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
+}
+
+function mlBox(title, rows) {
+  // rows: [[label, items, fmt]]
+  const box = el("div", "mlbox");
+  box.appendChild(el("div", "h", title));
+  for (const [label, items, fmt] of rows) {
+    if (!items || !items.length) continue;
+    const txt = items.map(i => `<b>${fmt(i)}</b> (${pct(i.prob)})`).join(" · ");
+    box.appendChild(el("div", "ml", `<span class="mlk">${label}:</span> ${txt}`));
+  }
+  return box;
+}
+const fmtVal = i => i.value, fmtLabel = i => i.label;
+
+function renderAnalysis(detail, id, data) {
+  detail.innerHTML = "";
+  const home = data.event.home.name, away = data.event.away.name;
+
+  const bar = el("div", "toolbar");
+  const confirmed = data.lineupConfirmed;
+  bar.innerHTML = `<span class="badge ${confirmed ? "ok" : "prov"}">${confirmed ? "Escalação confirmada" : "Escalação provisória"}</span>
+    <span class="pill">amostra: ${data.meta.homeMatchesSampled}/${data.meta.awayMatchesSampled} jogos</span>
+    <span class="pill">confiança: ${data.meta.confidence}</span>`;
+  const refreshBtn = el("button", "", "↻ Atualizar escalação");
+  refreshBtn.disabled = confirmed;
+  refreshBtn.onclick = () => doRefresh(detail, id, refreshBtn);
+  bar.appendChild(refreshBtn);
+  if (GEMINI_ENABLED) {
+    const gb = el("button", "primary", "✨ Analisar com Gemini");
+    gb.onclick = () => doGemini(detail, id, gb);
+    bar.appendChild(gb);
+  }
+  detail.appendChild(bar);
+
+  // referee
+  if (data.referee) {
+    const r = data.referee;
+    const info = r.known
+      ? `${r.name} (${r.country || "?"}) — média ${r.avgYellow} 🟨/jogo em ${r.matches} jogo(s); fator cartões <b>${r.factor}×</b> (liga ${r.leagueAvg})`
+      : `${r.name || "árbitro indefinido"} — sem histórico; fator cartões neutro (1×)`;
+    detail.appendChild(el("div", "ref", `🧑‍⚖️ <b>Árbitro:</b> ${info}`));
+  }
+
+  if (data.accuracy) detail.appendChild(renderAccuracy(data.accuracy));
+
+  const g = data.goals, ml = g.mostLikely;
+  const grid = el("div", "grid");
+
+  // result
+  const resCard = el("div", "card");
+  resCard.appendChild(el("h3", null, "Resultado (1X2)"));
+  const three = el("div", "three");
+  three.innerHTML = `
+    <div><div class="v" style="color:${pColor(g.result.home)}">${pct(g.result.home)}</div><div class="l">${home}</div></div>
+    <div><div class="v" style="color:${pColor(g.result.draw)}">${pct(g.result.draw)}</div><div class="l">Empate</div></div>
+    <div><div class="v" style="color:${pColor(g.result.away)}">${pct(g.result.away)}</div><div class="l">${away}</div></div>`;
+  resCard.appendChild(three);
+  const pbar = el("div", "pbar");
+  pbar.innerHTML = `<i style="width:${g.result.home*100}%;background:var(--accent2)"></i>`
+    + `<i style="width:${g.result.draw*100}%;background:var(--muted)"></i>`
+    + `<i style="width:${g.result.away*100}%;background:var(--accent3)"></i>`;
+  resCard.appendChild(pbar);
+  resCard.appendChild(el("p", "muted", `Gols esperados: ${home} ${g.expectedGoals.home} — ${g.expectedGoals.away} ${away}`));
+  resCard.appendChild(ouTable("Over/Under Gols", g.overUnder));
+  resCard.appendChild(kvTable("Ambos marcam", {"Sim":g.btts.yes, "Não":g.btts.no}));
+  resCard.appendChild(mlBox("Mais prováveis", [
+    ["Total de gols", ml.totalGoals, i => i.value + " gols"],
+    [`Gols ${home}`, ml.homeGoals, fmtVal],
+    [`Gols ${away}`, ml.awayGoals, fmtVal],
+    ["Over/Under", ml.overUnder, fmtLabel],
+    ["Placar", ml.score, fmtLabel],
+  ]));
+  grid.appendChild(resCard);
+
+  // correct score + handicap
+  const csCard = el("div", "card");
+  csCard.appendChild(el("h3", null, "Placar & handicap"));
+  csCard.appendChild(probList(g.correctScore.map(c => [c.score, c.prob])));
+  csCard.appendChild(ouTable("Handicap asiático (mando " + home + ")", null, g.asianHandicap, home, away));
+  grid.appendChild(csCard);
+
+  // team props
+  for (const [key, p] of Object.entries(data.teamProps)) {
+    const c = el("div", "card");
+    c.appendChild(el("h3", null, p.label));
+    if (p.home) c.appendChild(ouTable(home + " — linhas", p.home.lines));
+    if (p.away) c.appendChild(ouTable(away + " — linhas", p.away.lines));
+    if (p.total) c.appendChild(ouTable("Total — linhas", p.total.lines));
+    const rows = [];
+    if (p.total) rows.push([`Total ${p.label.toLowerCase()}`, p.total.mostLikely, fmtVal]);
+    if (p.home) rows.push([`${home}`, p.home.mostLikely, fmtVal]);
+    if (p.away) rows.push([`${away}`, p.away.mostLikely, fmtVal]);
+    c.appendChild(mlBox("Mais prováveis", rows));
+    grid.appendChild(c);
+  }
+  detail.appendChild(grid);
+
+  const actualsMap = data.accuracy ? data.accuracy.playersActual : null;
+  detail.appendChild(playerSection(home, data.playerProps.home, actualsMap));
+  detail.appendChild(playerSection(away, data.playerProps.away, actualsMap));
+
+  const gdiv = el("div", "gemini"); gdiv.id = "gemini-" + id; gdiv.style.display = "none";
+  detail.appendChild(gdiv);
+}
+
+function ouTable(title, lines, handicap, home, away) {
+  const c = el("div");
+  c.appendChild(el("div", "muted", title));
+  const wrap = el("div", "scroll"); const t = el("table");
+  if (handicap) {
+    t.innerHTML = "<tr><th>Linha</th><th class='p'>" + home + "</th><th class='p'>" + away + "</th></tr>";
+    for (const [line, v] of Object.entries(handicap))
+      t.innerHTML += `<tr><td>${line}</td><td class="p">${pc(v.home)}</td><td class="p">${pc(v.away)}</td></tr>`;
+  } else {
+    t.innerHTML = "<tr><th>Linha</th><th class='p'>Over</th><th class='p'>Under</th></tr>";
+    for (const [line, v] of Object.entries(lines))
+      t.innerHTML += `<tr><td>${line}</td><td class="p">${pc(v.over)}</td><td class="p">${pc(v.under)}</td></tr>`;
+  }
+  wrap.appendChild(t); c.appendChild(wrap);
+  return c;
+}
+
+function kvTable(title, obj) {
+  const c = el("div");
+  c.appendChild(el("div", "muted", title));
+  const t = el("table");
+  for (const [k, v] of Object.entries(obj)) t.innerHTML += `<tr><td>${k}</td><td class="p">${pc(v)}</td></tr>`;
+  c.appendChild(t);
+  return c;
+}
+
+function probList(pairs) {
+  const t = el("table");
+  for (const [k, v] of pairs) t.innerHTML += `<tr><td>${k}</td><td class="p">${pc(v)}</td></tr>`;
+  return t;
+}
+
+function playerSection(teamName, players, actuals) {
+  const d = el("details", "players");
+  d.appendChild(el("summary", null, `Jogadores — ${teamName} (${players.length})`));
+  const wrap = el("div", "scroll"); const t = el("table");
+  const realHead = actuals ? '<th class="p">Real C/F/🟨</th>' : '';
+  t.innerHTML = `<tr><th>Jogador</th><th class="p">Chutes .5/1.5/2.5</th><th class="p">Faltas .5/1.5</th><th class="p">Cartão</th>${realHead}<th class="p">Conf.</th></tr>`;
+  for (const p of players) {
+    if (!p.appearances) { t.innerHTML += `<tr><td>${p.name}</td><td colspan="${actuals?5:4}" class="muted">sem amostras</td></tr>`; continue; }
+    const s = p.shots && p.shots.lines, f = p.fouls && p.fouls.lines;
+    const shotsCell = s ? `${pct(s["0.5"].over)} / ${pct(s["1.5"].over)} / ${pct(s["2.5"].over)}` : '<span class="muted">sem dados</span>';
+    const foulsCell = f ? `${pct(f["0.5"].over)} / ${pct(f["1.5"].over)}` : '<span class="muted">–</span>';
+    const cardCell = p.card ? pct(p.card.probAtLeastOne) : '–';
+    let realCell = '';
+    if (actuals) {
+      const ra = actuals[p.playerId];
+      realCell = ra ? `<td class="p">${ra.shots == null ? '–' : ra.shots} / ${ra.fouls} / ${ra.yellow}</td>` : '<td class="p muted">não jogou</td>';
+    }
+    t.innerHTML += `<tr><td>${p.name} <span class="muted">(${p.appearances}j)</span></td>
+      <td class="p">${shotsCell}</td><td class="p">${foulsCell}</td><td class="p">${cardCell}</td>${realCell}<td class="p conf-${p.confidence}">${p.confidence}</td></tr>`;
+  }
+  wrap.appendChild(t); d.appendChild(wrap);
+  return d;
+}
+
+function renderAccuracy(a) {
+  const card = el("div", "gemini");
+  const s = a.summary;
+  const mkt = s.marketHitRate == null ? '–' : pct(s.marketHitRate);
+  const plr = s.playerHitRate == null ? '–' : pct(s.playerHitRate);
+  let html = '<h3>✅ Conferência de acertos — jogo finalizado</h3>';
+  html += `<div class="three" style="margin-bottom:10px">
+    <div><div class="v">${a.result.correct ? '✓' : '✗'}</div><div class="l">Resultado</div></div>
+    <div><div class="v">${mkt}</div><div class="l">Mercados (${s.marketLineHits}/${s.marketLineTotal})</div></div>
+    <div><div class="v">${plr}</div><div class="l">Jogadores (${s.playerLineHits}/${s.playerLineTotal})</div></div>
+    <div><div class="v">${s.brier}</div><div class="l">Brier</div></div></div>`;
+  const rows = [];
+  const r = a.result;
+  const totalGoals = r.scoreStr.split('-').reduce((x, y) => (+x) + (+y), 0);
+  rows.push(['Resultado', `${r.predicted} (${pct(r.predictedProb)})`, `${r.scoreStr} → ${r.actual}`, r.correct]);
+  for (const ou of a.overUnderGoals) rows.push([`Gols O/U ${ou.line}`, `${ou.modelSide} (${pct(ou.predOver)})`, `${totalGoals} gols`, ou.correct]);
+  rows.push(['Ambos marcam', `${a.btts.modelSide} (${pct(a.btts.predYes)})`, a.btts.actual ? 'Sim' : 'Não', a.btts.correct]);
+  for (const [, tp] of Object.entries(a.teamProps)) {
+    const tot = tp.scopes.total; if (!tot) continue;
+    const mid = tot.lines[Math.floor(tot.lines.length / 2)];
+    rows.push([tp.label + ' (total)', `${mid.modelSide} ${mid.line} (${pct(mid.predOver)})`, `${tot.actual} (prev. ${tot.expected})`, mid.correct]);
+  }
+  const wrap = el("div", "scroll"); const t = el("table");
+  t.innerHTML = '<tr><th>Mercado</th><th>Previsão</th><th>Real</th><th class="p">Acerto</th></tr>';
+  for (const [m, pr, re, ok] of rows) t.innerHTML += `<tr><td>${m}</td><td>${pr}</td><td>${re}</td><td class="p">${chk(ok)}</td></tr>`;
+  wrap.appendChild(t);
+  card.innerHTML = html; card.appendChild(wrap);
+  card.appendChild(el("p", "muted", "Previsões geradas só com jogos anteriores a esta partida (pré-jogo)."));
+  return card;
+}
+
+async function doRefresh(detail, id, btn) {
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Atualizando…';
+  try { renderAnalysis(detail, id, await api("/api/refresh/" + id, { method: "POST" })); }
+  catch (e) { btn.disabled = false; btn.textContent = "↻ Atualizar escalação"; alert("Falha: " + e.message); }
+}
+
+async function doGemini(detail, id, btn) {
+  const box = document.getElementById("gemini-" + id);
+  box.style.display = "block";
+  box.innerHTML = '<p class="muted"><span class="spin"></span> Gemini analisando…</p>';
+  btn.disabled = true;
+  try {
+    const a = await api("/api/gemini/" + id, { method: "POST" });
+    let html = '<h3>✨ Análise do Gemini</h3><p>' + (a.summary || "") + '</p>';
+    if (a.keyFactors?.length) html += '<ul>' + a.keyFactors.map(k => '<li>' + k + '</li>').join('') + '</ul>';
+    if (a.topBets?.length) {
+      html += '<h3>Apostas sugeridas</h3><div class="scroll"><table><tr><th>Mercado</th><th>Seleção</th><th class="p">Conf.</th></tr>';
+      for (const b of a.topBets) html += `<tr><td>${b.market}</td><td>${b.selection}<div class="muted">${b.rationale}</div></td><td class="p">${b.confidence}</td></tr>`;
+      html += '</table></div>';
+    }
+    if (a.cautions?.length) html += '<p class="muted">⚠ ' + a.cautions.join(" · ") + '</p>';
+    box.innerHTML = html;
+  } catch (e) { box.innerHTML = '<p class="err">Gemini indisponível: ' + e.message + '</p>'; }
+  finally { btn.disabled = false; }
+}
+
+// ---------- dashboard ----------
+let dashLoaded = false;
+async function loadDashboard(force) {
+  const root = document.getElementById("view-dashboard");
+  if (dashLoaded && !force) return;
+  root.innerHTML = '<p class="muted"><span class="spin"></span> Avaliando todos os jogos finalizados… (pode demorar na 1ª vez)</p>';
+  try { renderDashboard(root, await api("/api/dashboard")); dashLoaded = true; }
+  catch (e) { root.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
+}
+
+function renderDashboard(root, d) {
+  root.innerHTML = "";
+  if (!d.matchesEvaluated) { root.innerHTML = '<p class="muted">Ainda não há jogos finalizados para avaliar.</p>'; return; }
+  root.appendChild(el("p", "muted", `Baseado em ${d.matchesEvaluated} jogo(s) finalizado(s). Previsões pré-jogo.`));
+
+  const three = el("div", "three"); three.style.marginBottom = "14px";
+  three.innerHTML = `
+    <div><div class="v" style="color:${pColor(d.markets.overall.rate)}">${pct(d.markets.overall.rate)}</div><div class="l">Acerto geral (${d.markets.overall.hits}/${d.markets.overall.total})</div></div>
+    <div><div class="v" style="color:${pColor(d.result.accuracy)}">${pct(d.result.accuracy)}</div><div class="l">Resultado 1X2 (${d.result.correct}/${d.result.total})</div></div>
+    <div><div class="v">${d.result.avgBrier}</div><div class="l">Brier médio</div></div>`;
+  root.appendChild(three);
+
+  const grid = el("div", "grid");
+  // by market
+  const mc = el("div", "card"); mc.appendChild(el("h3", null, "Acerto por mercado"));
+  const mw = el("div", "scroll"); const mt = el("table");
+  mt.innerHTML = '<tr><th>Mercado</th><th class="p">Acertos</th><th class="p">Taxa</th></tr>';
+  const sorted = Object.entries(d.markets.byMarket).sort((a, b) => (b[1].rate || 0) - (a[1].rate || 0));
+  for (const [k, v] of sorted) mt.innerHTML += `<tr><td>${k}</td><td class="p">${v.hits}/${v.total}</td><td class="p">${pc(v.rate)}</td></tr>`;
+  mw.appendChild(mt); mc.appendChild(mw); grid.appendChild(mc);
+
+  // calibration
+  const cc = el("div", "card"); cc.appendChild(el("h3", null, "Calibração (confiança × realidade)"));
+  const cw = el("div", "scroll"); const ct = el("table");
+  ct.innerHTML = '<tr><th>Confiança</th><th class="p">n</th><th class="p">Previsto</th><th class="p">Real</th></tr>';
+  for (const c of d.calibration) ct.innerHTML += `<tr><td>${c.range}</td><td class="p">${c.n}</td><td class="p">${pc(c.predicted)}</td><td class="p">${pc(c.actual)}</td></tr>`;
+  cw.appendChild(ct); cc.appendChild(cw);
+  cc.appendChild(el("p", "muted", "Previsto ≈ Real significa modelo bem calibrado."));
+  grid.appendChild(cc);
+  root.appendChild(grid);
+
+  // per match
+  const pm = el("div", "card"); pm.style.marginTop = "14px"; pm.appendChild(el("h3", null, "Por jogo"));
+  const pw = el("div", "scroll"); const pt = el("table");
+  pt.innerHTML = '<tr><th>Jogo</th><th class="p">Placar</th><th class="p">1X2</th><th class="p">Mercados</th></tr>';
+  for (const m of d.perMatch)
+    pt.innerHTML += `<tr><td>${m.home} x ${m.away}</td><td class="p">${m.score}</td><td class="p">${chk(m.resultCorrect)}</td><td class="p">${pc(m.marketHitRate)}</td></tr>`;
+  pw.appendChild(pt); pm.appendChild(pw); root.appendChild(pm);
+}
+
+boot();
+</script>
+</body>
+</html>

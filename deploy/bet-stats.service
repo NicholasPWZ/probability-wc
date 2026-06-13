@@ -1,0 +1,21 @@
+# /etc/systemd/system/bet-stats.service
+# Mirrors how the `album` app is run, but on port 8001.
+# Adjust User/paths to match your album service if they differ
+# (check with: sudo systemctl cat album).
+[Unit]
+Description=Bet Stats (World Cup Match Analyzer, FastAPI)
+After=network.target
+
+[Service]
+User=nginx
+Group=nginx
+WorkingDirectory=/opt/bet-stats
+EnvironmentFile=/opt/bet-stats/.env
+ExecStart=/opt/bet-stats/.venv/bin/gunicorn app.main:app \
+    -k uvicorn.workers.UvicornWorker \
+    -w 2 -b 127.0.0.1:8001 --timeout 180
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
