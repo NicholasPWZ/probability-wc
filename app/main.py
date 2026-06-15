@@ -249,7 +249,7 @@ def _best_bets_sync() -> dict:
             score = round(p["prob"] * (r if r is not None else 0.55), 4)
             match_bets.append({
                 "matchId": m["id"], "home": m["home"], "away": m["away"],
-                "time": m["time"], "date": m["date"],
+                "time": m["time"], "date": m["date"], "startTimestamp": m.get("startTimestamp"),
                 "market": p["market"], "category": p.get("category"),
                 "selection": p["selection"], "prob": p["prob"],
                 "expected": p.get("expected"), "reliability": r, "score": score,
