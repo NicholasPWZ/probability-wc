@@ -6,132 +6,127 @@
 <title>Bet Stats — Copa do Mundo 2026</title>
 <style>
   :root {
-    --bg:#0a0e14; --panel:#141b26; --panel2:#1a2434; --border:#283449;
-    --text:#e8eef6; --muted:#8595a8; --accent:#3fd07a; --accent2:#5aa9ff;
-    --accent3:#b07dff; --warn:#f0b429; --bad:#ff6b6b;
-    --grad:linear-gradient(120deg,#5aa9ff 0%,#b07dff 60%,#3fd07a 120%);
-    --shadow:0 4px 16px rgba(0,0,0,.35);
+    --bg:#0c0e12; --panel:#13161c; --panel2:#181c23; --elev:#1d222b;
+    --border:#252a33; --border2:#333a45;
+    --text:#e6e8ec; --muted:#878e99;
+    --accent:#5fa07a;     /* positive / value / accuracy */
+    --accent2:#5b8cff;    /* primary */
+    --accent3:#6f7bd6;    /* AI panel */
+    --warn:#c79a4a; --bad:#c66b66;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 16px rgba(0,0,0,.22);
+    --r:10px;
   }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;
-         background:
-           radial-gradient(900px 500px at 100% -10%, rgba(90,169,255,.10), transparent 60%),
-           radial-gradient(800px 500px at -10% 0%, rgba(176,125,255,.10), transparent 55%),
-           var(--bg);
-         background-attachment:fixed; color:var(--text); -webkit-text-size-adjust:100%; }
-  header { padding:16px 20px; border-bottom:1px solid var(--border); position:sticky; top:0;
-           background:rgba(10,14,20,.82); backdrop-filter:blur(10px); z-index:5; }
-  h1 { font-size:20px; margin:0; font-weight:700; letter-spacing:-.02em;
-       background:var(--grad); -webkit-background-clip:text; background-clip:text;
-       -webkit-text-fill-color:transparent; }
-  .sub { color:var(--muted); font-size:13px; margin-top:4px; }
-  nav { display:flex; gap:8px; margin-top:12px; }
-  nav button { flex:0 0 auto; border-radius:999px; }
-  nav button.active { background:var(--grad); color:#07101f; border-color:transparent;
-                      font-weight:700; box-shadow:0 2px 10px rgba(90,169,255,.35); }
-  main { max-width:1000px; margin:0 auto; padding:18px 14px 60px; }
-  .day { margin:22px 0 10px; font-size:13px; color:var(--accent2); font-weight:700; text-transform:uppercase;
-         letter-spacing:.06em; display:flex; align-items:center; gap:10px; }
-  .day::after { content:""; flex:1; height:1px; background:linear-gradient(90deg,var(--border),transparent); }
-  .match { background:var(--panel); border:1px solid var(--border); border-radius:12px; margin:9px 0;
-           overflow:hidden; transition:border-color .15s, transform .1s, box-shadow .15s; }
-  .match:hover { border-color:#3a4a64; box-shadow:var(--shadow); }
-  .match.open { border-color:var(--accent2); box-shadow:0 0 0 1px rgba(90,169,255,.25), var(--shadow); }
-  .match-head { display:flex; align-items:center; gap:10px; padding:13px 15px; cursor:pointer; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;
+         background:var(--bg); color:var(--text); -webkit-text-size-adjust:100%; line-height:1.45; }
+  header { padding:14px 20px; border-bottom:1px solid var(--border); position:sticky; top:0;
+           background:rgba(12,14,18,.9); backdrop-filter:blur(8px); z-index:5; }
+  .brand { display:flex; align-items:center; gap:10px; }
+  .brand svg { color:var(--accent2); flex:0 0 auto; }
+  h1 { font-size:17px; margin:0; font-weight:650; letter-spacing:-.01em; color:var(--text); }
+  h1 .dim { color:var(--muted); font-weight:500; }
+  .sub { color:var(--muted); font-size:12.5px; margin-top:4px; }
+  nav { display:flex; gap:6px; margin-top:14px; }
+  nav button { flex:0 0 auto; border-radius:8px; color:var(--muted); background:transparent; border-color:transparent; }
+  nav button:hover:not(.active) { background:var(--panel2); color:var(--text); }
+  nav button.active { background:rgba(91,140,255,.12); color:var(--accent2); border-color:rgba(91,140,255,.32); font-weight:600; }
+  main { max-width:1040px; margin:0 auto; padding:20px 16px 64px; }
+  .day { margin:22px 0 10px; font-size:11px; color:var(--muted); font-weight:650; text-transform:uppercase;
+         letter-spacing:.08em; display:flex; align-items:center; gap:12px; }
+  .day::after { content:""; flex:1; height:1px; background:var(--border); }
+  .match { background:var(--panel); border:1px solid var(--border); border-radius:var(--r); margin:8px 0;
+           overflow:hidden; transition:border-color .15s, box-shadow .15s; }
+  .match:hover { border-color:var(--border2); }
+  .match.open { border-color:var(--border2); box-shadow:var(--shadow); }
+  .match-head { display:flex; align-items:center; gap:12px; padding:13px 15px; cursor:pointer; }
   .match-head:hover { background:var(--panel2); }
-  .time { font-variant-numeric:tabular-nums; color:var(--text); width:46px; font-size:14px; font-weight:600;
-          flex:0 0 auto; opacity:.85; }
-  .teams { flex:1; font-weight:600; min-width:0; }
+  .time { font-variant-numeric:tabular-nums; color:var(--text); width:44px; font-size:13.5px; font-weight:600; flex:0 0 auto; }
+  .teams { flex:1; font-weight:550; min-width:0; font-size:14.5px; }
   .group { color:var(--muted); font-size:12px; flex:0 0 auto; }
-  .status { font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; background:var(--panel2);
+  .status { font-size:11px; font-weight:600; padding:2px 8px; border-radius:6px; background:var(--panel2);
             color:var(--muted); border:1px solid var(--border); flex:0 0 auto; }
-  .status:not(:empty) { color:var(--accent2); border-color:rgba(90,169,255,.4); background:rgba(90,169,255,.08); }
-  .status.live { color:var(--bad); border-color:var(--bad); background:rgba(255,107,107,.12);
-                 animation:pulse 1.6s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity:.55; } }
-  .chev { color:var(--muted); transition:transform .15s; flex:0 0 auto; font-size:18px; }
-  .match.open .chev { transform:rotate(90deg); color:var(--accent2); }
-  .detail { display:none; padding:0 14px 16px; border-top:1px solid var(--border); }
+  .status:not(:empty) { color:var(--text); }
+  .status.live { color:var(--bad); border-color:rgba(198,107,102,.4); }
+  .chev { color:var(--muted); transition:transform .15s; flex:0 0 auto; display:inline-flex; }
+  .match.open .chev { transform:rotate(90deg); color:var(--text); }
+  .detail { display:none; padding:2px 15px 16px; border-top:1px solid var(--border); }
   .match.open .detail { display:block; }
-  .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:12px 0; }
-  button { font:inherit; border:1px solid var(--border); background:var(--panel2); color:var(--text);
-           padding:7px 13px; border-radius:8px; cursor:pointer; transition:border-color .15s, background .15s; }
-  button:hover:not(:disabled) { border-color:var(--accent2); background:#212d40; }
+  .toolbar { display:flex; gap:7px; align-items:center; flex-wrap:wrap; padding:12px 0; }
+  button { font:inherit; font-size:13px; border:1px solid var(--border); background:var(--panel2); color:var(--text);
+           padding:7px 12px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+           transition:border-color .15s, background .15s, color .15s; }
+  button:hover:not(:disabled) { border-color:var(--border2); background:var(--elev); }
   button:disabled { opacity:.4; cursor:default; }
-  button.primary { background:var(--grad); color:#07101f; border-color:transparent; font-weight:700;
-                   box-shadow:0 2px 10px rgba(176,125,255,.3); }
-  .badge { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; border:1px solid var(--border); }
-  .badge.ok { color:var(--accent); border-color:rgba(63,208,122,.45); background:rgba(63,208,122,.1); }
-  .badge.prov { color:var(--warn); border-color:rgba(240,180,41,.45); background:rgba(240,180,41,.1); }
-  .pill { font-size:11px; padding:3px 10px; border-radius:20px; border:1px solid var(--border); color:var(--muted);
-          background:var(--panel); }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:14px; }
-  .card { background:linear-gradient(180deg,var(--panel2),var(--panel)); border:1px solid var(--border);
-          border-radius:12px; padding:14px 15px; box-shadow:var(--shadow); }
-  .card h3 { margin:0 0 11px; font-size:12px; color:var(--accent2); text-transform:uppercase; letter-spacing:.06em;
-             font-weight:700; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  button svg, nav button svg { width:14px; height:14px; flex:0 0 auto; }
+  button.primary { background:var(--accent2); color:#0b1020; border-color:var(--accent2); font-weight:600; }
+  button.primary:hover:not(:disabled) { background:#719cff; border-color:#719cff; }
+  .badge { font-size:11px; font-weight:600; padding:2px 9px; border-radius:6px; border:1px solid var(--border); }
+  .badge.ok { color:var(--accent); border-color:rgba(95,160,122,.4); }
+  .badge.prov { color:var(--warn); border-color:rgba(199,154,74,.4); }
+  .pill { font-size:11px; padding:3px 9px; border-radius:6px; border:1px solid var(--border); color:var(--muted); background:var(--panel); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:var(--r); padding:14px 15px; }
+  .card h3 { margin:0 0 11px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em;
+             font-weight:650; padding-bottom:9px; border-bottom:1px solid var(--border); }
   .scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
-  th,td { text-align:left; padding:5px 6px; border-bottom:1px solid rgba(40,52,73,.6); white-space:nowrap; }
+  th,td { text-align:left; padding:6px 7px; border-bottom:1px solid var(--border); white-space:nowrap; }
   tr:last-child td { border-bottom:none; }
-  tbody tr:hover td, table tr:hover td { background:rgba(90,169,255,.04); }
-  th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+  table tr:hover td { background:var(--panel2); }
+  th { color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; }
   td.p, th.p { text-align:right; font-variant-numeric:tabular-nums; }
   .three { display:flex; gap:8px; flex-wrap:wrap; }
-  .three div { flex:1 1 0; min-width:72px; text-align:center;
-               background:linear-gradient(180deg,var(--panel),#10161f); border:1px solid var(--border);
-               border-radius:10px; padding:10px 6px; }
-  .three .v { font-size:19px; font-weight:800; letter-spacing:-.02em; }
-  .three .l { font-size:10.5px; color:var(--muted); margin-top:2px; }
-  .pbar { display:flex; height:8px; border-radius:6px; overflow:hidden; margin:10px 0 4px; border:1px solid var(--border); }
+  .three div { flex:1 1 0; min-width:74px; text-align:center; background:var(--panel2); border:1px solid var(--border);
+               border-radius:8px; padding:11px 6px; }
+  .three .v { font-size:18px; font-weight:700; letter-spacing:-.01em; }
+  .three .l { font-size:10.5px; color:var(--muted); margin-top:3px; }
+  .pbar { display:flex; height:6px; border-radius:4px; overflow:hidden; margin:11px 0 4px; background:var(--panel2); }
   .pbar i { display:block; height:100%; }
   .conf-low { color:var(--bad)!important; } .conf-medium { color:var(--warn)!important; } .conf-high { color:var(--accent)!important; }
   .muted { color:var(--muted); font-size:12px; }
   .err { color:var(--bad); font-size:13px; }
-  .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--muted); border-top-color:transparent;
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--border2); border-top-color:var(--accent2);
           border-radius:50%; animation:s .7s linear infinite; vertical-align:-2px; }
   @keyframes s { to { transform:rotate(360deg); } }
   .ml { font-size:12px; margin:3px 0; }
   .ml .mlk { color:var(--muted); }
-  .ml b { color:var(--accent); font-weight:600; }
-  .mlbox { margin-top:10px; padding-top:8px; border-top:1px dashed var(--border); }
-  .mlbox .h { font-size:11px; color:var(--accent2); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
-  .gemini { background:var(--panel); border:1px solid var(--accent); border-radius:9px; padding:12px 14px; margin-top:12px; }
-  .gemini h3 { color:var(--accent); margin:0 0 8px; font-size:14px; }
-  .gemini li { margin:4px 0; }
-  .gpanel { background:linear-gradient(180deg,rgba(176,125,255,.08),transparent); border:1px solid var(--accent3);
-            border-radius:11px; padding:13px 15px; margin-top:12px; box-shadow:var(--shadow); }
-  .gpanel h3 { color:var(--accent3); margin:0 0 9px; font-size:14px; }
-  .gpanel li { margin:4px 0; }
-  .gres { background:var(--panel); border:1px solid var(--border); border-left:3px solid var(--accent3);
-          border-radius:8px; padding:10px 12px; margin-bottom:10px; }
-  .gres .gh { font-size:11px; font-weight:700; color:var(--accent3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
-  .ref { background:linear-gradient(90deg,rgba(240,180,41,.08),transparent); border:1px solid var(--border);
-         border-left:3px solid var(--warn); border-radius:9px; padding:10px 14px; margin-top:10px; font-size:13px; }
-  .preds { background:linear-gradient(180deg,rgba(90,169,255,.07),transparent); border:1px solid var(--accent2);
-           border-radius:11px; padding:13px 15px; margin-top:12px; box-shadow:var(--shadow); }
-  .preds h3 { color:var(--accent2); margin:0 0 9px; font-size:14px; }
+  .ml b { color:var(--text); font-weight:600; }
+  .mlbox { margin-top:11px; padding-top:9px; border-top:1px solid var(--border); }
+  .mlbox .h { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
+  /* flat side-accented info panels */
+  .preds, .gemini, .gpanel, .ref { background:var(--panel); border:1px solid var(--border); border-radius:var(--r);
+            padding:13px 15px; margin-top:12px; border-left:2px solid var(--border2); }
+  .preds { border-left-color:var(--accent2); }
+  .gemini { border-left-color:var(--accent); }
+  .gpanel { border-left-color:var(--accent3); }
+  .preds h3, .gemini h3, .gpanel h3 { margin:0 0 10px; font-size:13px; font-weight:600;
+            display:flex; align-items:center; gap:7px; }
+  .preds h3 { color:var(--text); } .gemini h3 { color:var(--accent); } .gpanel h3 { color:var(--accent3); }
+  .preds h3 svg, .gpanel h3 svg { color:var(--accent2); } .gpanel h3 svg { color:var(--accent3); }
   .preds td b { color:var(--text); }
-  .oddin { width:56px; padding:4px 7px; border:1px solid var(--border); background:var(--bg); color:var(--text);
+  .gemini li, .gpanel li { margin:4px 0; }
+  .ref { font-size:13px; display:flex; align-items:center; gap:8px; border-left-color:var(--warn); }
+  .ref svg { color:var(--warn); flex:0 0 auto; }
+  .gres { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:9px; }
+  .gres .gh { font-size:10.5px; font-weight:650; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
+  .oddin { width:58px; padding:5px 7px; border:1px solid var(--border); background:var(--bg); color:var(--text);
            border-radius:6px; font:inherit; font-size:12px; }
   .oddin:focus { outline:none; border-color:var(--accent2); }
   .oddcell { white-space:nowrap; }
   .valout { margin-left:7px; font-size:12px; }
-  ::selection { background:rgba(90,169,255,.3); }
+  ::selection { background:rgba(91,140,255,.25); }
   .scroll::-webkit-scrollbar { height:8px; width:8px; }
-  .scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:8px; }
-  .scroll::-webkit-scrollbar-thumb:hover { background:#3a4a64; }
-  details.players summary { cursor:pointer; color:var(--accent2); font-size:13px; margin-top:6px; }
+  .scroll::-webkit-scrollbar-thumb { background:var(--border2); border-radius:8px; }
+  details.players summary { cursor:pointer; color:var(--accent2); font-size:13px; margin-top:8px; font-weight:550; }
   @media (max-width:640px) {
     header { padding:12px 14px; }
-    h1 { font-size:16px; }
-    main { padding:14px 10px 50px; }
+    main { padding:14px 11px 50px; }
     .grid { grid-template-columns:1fr; }
     .group { display:none; }
-    .match-head { gap:8px; padding:11px 12px; }
+    .match-head { gap:9px; padding:12px; }
     .teams { font-size:14px; }
     table { font-size:12px; }
-    th,td { padding:4px 5px; }
+    th,td { padding:5px 6px; }
     .three .v { font-size:16px; }
     nav { overflow-x:auto; }
   }
@@ -139,13 +134,13 @@
 </head>
 <body>
 <header>
-  <h1>⚽ Bet Stats — Copa do Mundo 2026</h1>
-  <div class="sub">Probabilidades calculadas. Horários no fuso de Brasília.</div>
+  <div class="brand"><span id="brand-mark"></span><h1>Bet Stats <span class="dim">· Copa do Mundo 2026</span></h1></div>
+  <div class="sub">Probabilidades calculadas a partir de dados de desempenho. Horários no fuso de Brasília.</div>
   <nav>
-    <button id="nav-best" onclick="showView('best')">🔥 Melhores palpites</button>
-    <button id="nav-matches" class="active" onclick="showView('matches')">Próximos jogos</button>
-    <button id="nav-finished" onclick="showView('finished')">✅ Finalizados</button>
-    <button id="nav-dash" onclick="showView('dashboard')">📊 Desempenho</button>
+    <button id="nav-best" onclick="showView('best')"></button>
+    <button id="nav-matches" class="active" onclick="showView('matches')"></button>
+    <button id="nav-finished" onclick="showView('finished')"></button>
+    <button id="nav-dash" onclick="showView('dashboard')"></button>
   </nav>
 </header>
 <main>
@@ -158,12 +153,41 @@
 <script>
 const BASE = "";
 const pct = p => (p == null ? "–" : (p * 100).toFixed(1) + "%");
-// heat color: red (low) -> amber (~50%) -> green (high)
+// heat color: muted red (low) -> neutral (~50%) -> muted green (high) — desaturated for a sober look
 function pColor(p) {
   if (p == null) return "var(--muted)";
   const hue = Math.max(0, Math.min(1, p)) * 135;       // 0=red .. 135=green
-  return `hsl(${hue.toFixed(0)},78%,62%)`;
+  return `hsl(${hue.toFixed(0)},42%,62%)`;
 }
+
+// minimal monochrome line icons (inherit currentColor)
+const _svg = d => `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-2px">${d}</svg>`;
+const ICON = {
+  logo: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 15v-3M12 15V9M16 15v-4"/></svg>`,
+  star: _svg('<path d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.3-4.8-2.5-4.8 2.5.9-5.3L4.2 9.7l5.4-.8z"/>'),
+  calendar: _svg('<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>'),
+  check: _svg('<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.3l2.4 2.4 4.6-5"/>'),
+  chart: _svg('<path d="M4 20h16"/><path d="M7 20v-6M12 20V7M17 20v-9"/>'),
+  target: _svg('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/>'),
+  spark: _svg('<path d="M12 3l1.7 4.8L18.5 9l-4.8 1.7L12 15l-1.7-4.3L5.5 9l4.8-1.2z"/><path d="M18 15l.7 2 .. "/>'),
+  flag: _svg('<path d="M5.5 21V4M5.5 4.5h11l-2 3.3 2 3.2h-11"/>'),
+  user: _svg('<circle cx="12" cy="8" r="3.6"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>'),
+  layers: _svg('<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>'),
+  refresh: _svg('<path d="M20 11a8 8 0 1 0-.6 3.5"/><path d="M20 5v5h-5"/>'),
+  clock: _svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3.2 1.9"/>'),
+  shield: _svg('<path d="M12 3.5l7 2.5v5c0 4.4-3 7.7-7 8.9-4-1.2-7-4.5-7-8.9V6z"/>'),
+};
+ICON.spark = _svg('<path d="M12 3l1.8 5L19 9.8l-5.2 1.8L12 17l-1.8-5.4L5 9.8 10.2 8z"/>');
+
+// inject brand mark + nav icons (DOM is ready: script is at end of body)
+(function iconizeChrome() {
+  const bm = document.getElementById("brand-mark"); if (bm) bm.innerHTML = ICON.logo;
+  const set = (id, ic, lab) => { const b = document.getElementById(id); if (b) b.innerHTML = ic + "<span>" + lab + "</span>"; };
+  set("nav-best", ICON.star, "Melhores palpites");
+  set("nav-matches", ICON.calendar, "Próximos jogos");
+  set("nav-finished", ICON.check, "Finalizados");
+  set("nav-dash", ICON.chart, "Desempenho");
+})();
 // colored probability cell text
 const pc = p => p == null ? '<span class="muted">–</span>'
   : `<span style="color:${pColor(p)};font-weight:600">${(p * 100).toFixed(1)}%</span>`;
@@ -220,7 +244,7 @@ async function boot() {
     const { days } = await api("/api/matches");
     DAYS = days;
     renderMatchList(root, m => m.statusType !== "finished",
-                    "Nenhum jogo futuro — veja a aba ✅ Finalizados.");
+                    "Nenhum jogo futuro — veja a aba Finalizados.");
   } catch (e) {
     root.innerHTML = '<p class="err">Falha ao carregar jogos: ' + e.message + '</p>';
   }
@@ -260,7 +284,7 @@ async function loadBestBets(force) {
 }
 
 let lastBestBets = null, bestSort = "score";
-const BEST_SORTS = [["score", "⭐ Melhor"], ["time", "🕐 Horário"], ["rel", "🎯 Confiança"]];
+const BEST_SORTS = [["score", "star", "Melhor"], ["time", "clock", "Horário"], ["rel", "shield", "Confiança"]];
 
 function renderBestBets(root, d) { lastBestBets = d; drawBestBets(); }
 function setBestSort(mode) { bestSort = mode; drawBestBets(); }
@@ -274,11 +298,11 @@ function drawBestBets() {
   root.innerHTML = "";
   const head = el("div", "toolbar");
   head.innerHTML = `<span class="pill">${d.matchesConsidered} jogos · próximas ${d.windowHours}h</span>`;
-  const rb = el("button", "", "↻ Recalcular"); rb.onclick = () => loadBestBets(true);
+  const rb = el("button", "", ICON.refresh + "<span>Recalcular</span>"); rb.onclick = () => loadBestBets(true);
   head.appendChild(rb);
   // sub-tabs: mercados vs jogadores
-  for (const [k, lab] of [["market", "📊 Mercados"], ["player", "👤 Jogadores"]]) {
-    const tb = el("button", k === bestTab ? "primary" : "", lab);
+  for (const [k, ic, lab] of [["market", ICON.layers, "Mercados"], ["player", ICON.user, "Jogadores"]]) {
+    const tb = el("button", k === bestTab ? "primary" : "", ic + "<span>" + lab + "</span>");
     tb.onclick = () => setBestTab(k);
     head.appendChild(tb);
   }
@@ -286,8 +310,8 @@ function drawBestBets() {
 
   const sortbar = el("div", "toolbar");
   sortbar.appendChild(el("span", "muted", "ordenar:"));
-  for (const [k, lab] of BEST_SORTS) {
-    const sb = el("button", k === bestSort ? "primary" : "", lab);
+  for (const [k, ic, lab] of BEST_SORTS) {
+    const sb = el("button", k === bestSort ? "primary" : "", ICON[ic] + "<span>" + lab + "</span>");
     sb.onclick = () => setBestSort(k);
     sortbar.appendChild(sb);
   }
@@ -367,7 +391,7 @@ function renderAnalysis(detail, id, data) {
   bar.innerHTML = `<span class="badge ${confirmed ? "ok" : "prov"}">${confirmed ? "Escalação confirmada" : "Escalação provisória"}</span>
     <span class="pill">amostra: ${data.meta.homeMatchesSampled}/${data.meta.awayMatchesSampled} jogos</span>
     <span class="pill">confiança: ${data.meta.confidence}</span>`;
-  const refreshBtn = el("button", "", "↻ Atualizar escalação");
+  const refreshBtn = el("button", "", ICON.refresh + "<span>Atualizar escalação</span>");
   refreshBtn.disabled = confirmed;
   refreshBtn.onclick = () => doRefresh(detail, id, refreshBtn);
   bar.appendChild(refreshBtn);
@@ -377,9 +401,9 @@ function renderAnalysis(detail, id, data) {
   if (data.referee) {
     const r = data.referee;
     const info = r.known
-      ? `${r.name} (${r.country || "?"}) — média ${r.avgYellow} 🟨/jogo em ${r.matches} jogo(s); fator cartões <b>${r.factor}×</b> (liga ${r.leagueAvg})`
+      ? `${r.name} (${r.country || "?"}) — média ${r.avgYellow} cartões/jogo em ${r.matches} jogo(s); fator <b>${r.factor}×</b> (liga ${r.leagueAvg})`
       : `${r.name || "árbitro indefinido"} — sem histórico; fator cartões neutro (1×)`;
-    detail.appendChild(el("div", "ref", `🧑‍⚖️ <b>Árbitro:</b> ${info}`));
+    detail.appendChild(el("div", "ref", `${ICON.flag}<span><b>Árbitro:</b> ${info}</span>`));
   }
 
   if (data.predictions) detail.appendChild(renderPredictions(data.predictions));
@@ -499,7 +523,7 @@ function playerSection(teamName, players, actuals) {
   const d = el("details", "players");
   d.appendChild(el("summary", null, `Palpites por jogador — ${teamName} (${players.length})`));
   const wrap = el("div", "scroll"); const t = el("table");
-  const realHead = actuals ? '<th class="p">Real C / F / 🟨</th>' : '';
+  const realHead = actuals ? '<th class="p">Real C/F/Cart.</th>' : '';
   t.innerHTML = `<tr><th>Jogador</th><th>Chutes</th><th>Faltas</th><th class="p">Cartão</th>${realHead}<th class="p">Conf.</th></tr>`;
   for (const p of players) {
     if (!p.appearances) { t.innerHTML += `<tr><td>${p.name}</td><td colspan="${actuals?5:4}" class="muted">sem amostras</td></tr>`; continue; }
@@ -520,7 +544,7 @@ function playerSection(teamName, players, actuals) {
 
 function renderPredictions(preds) {
   const box = el("div", "preds");
-  box.appendChild(el("h3", null, "🎯 Previsões do modelo"));
+  box.appendChild(el("h3", null, ICON.target + "<span>Previsões do modelo</span>"));
   const wrap = el("div", "scroll"); const t = el("table");
   t.innerHTML = '<tr><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p" title="Acerto histórico do modelo neste mercado">Confiab.</th><th class="p">Odd → Valor</th></tr>';
   for (const p of preds)
@@ -537,7 +561,7 @@ function renderAccuracy(a) {
   const s = a.summary;
   const mkt = s.marketHitRate == null ? '–' : pct(s.marketHitRate);
   const plr = s.playerHitRate == null ? '–' : pct(s.playerHitRate);
-  let html = '<h3>✅ Conferência de acertos — jogo finalizado</h3>';
+  let html = '<h3>' + ICON.check + '<span>Conferência de acertos — jogo finalizado</span></h3>';
   html += `<div class="three" style="margin-bottom:10px">
     <div><div class="v">${a.result.correct ? '✓' : '✗'}</div><div class="l">Resultado</div></div>
     <div><div class="v">${mkt}</div><div class="l">Mercados (${s.marketLineHits}/${s.marketLineTotal})</div></div>
@@ -576,21 +600,22 @@ function renderGeminiPanel(id) {
 }
 
 async function loadGemini(id, box) {
-  box.innerHTML = '<h3>✨ Análise da IA (Gemini)</h3><p class="muted"><span class="spin"></span> carregando…</p>';
+  const head = '<h3>' + ICON.spark + '<span>Análise da IA (Gemini)</span></h3>';
+  box.innerHTML = head + '<p class="muted"><span class="spin"></span> carregando…</p>';
   try { renderGeminiBox(id, box, await api("/api/gemini/" + id)); }
-  catch (e) { box.innerHTML = '<h3>✨ Análise da IA (Gemini)</h3><p class="err">' + e.message + '</p>'; }
+  catch (e) { box.innerHTML = head + '<p class="err">' + e.message + '</p>'; }
 }
 
 function renderGeminiBox(id, box, info) {
   box.innerHTML = "";
-  box.appendChild(el("h3", null, "✨ Análise da IA (Gemini)"));
+  box.appendChild(el("h3", null, ICON.spark + "<span>Análise da IA (Gemini)</span>"));
   if (!info.enabled)
     box.appendChild(el("p", "muted", "IA desativada — configure GEMINI_API_KEY no servidor para habilitar."));
   info.analyses.forEach((a, i) => box.appendChild(geminiResult(a, i + 1, info.limit)));
 
   const btn = el("button", "primary");
   if (info.remaining <= 0) { btn.textContent = `Limite de análises atingido (${info.used}/${info.limit})`; btn.disabled = true; }
-  else { btn.textContent = `✨ Pedir análise da IA (${info.used}/${info.limit})`; btn.disabled = !info.enabled; }
+  else { btn.innerHTML = ICON.spark + `<span>Pedir análise da IA (${info.used}/${info.limit})</span>`; btn.disabled = !info.enabled; }
   btn.onclick = () => runGemini(id, box, btn);
   box.appendChild(btn);
   box.appendChild(el("p", "muted", `Cada jogo permite até ${info.limit} análises da IA.`));
@@ -600,7 +625,7 @@ async function runGemini(id, box, btn) {
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> IA analisando… (10-30s)';
   try { renderGeminiBox(id, box, await api("/api/gemini/" + id, { method: "POST" })); }
   catch (e) {
-    btn.disabled = false; btn.textContent = "✨ Pedir análise da IA";
+    btn.disabled = false; btn.innerHTML = ICON.spark + "<span>Pedir análise da IA</span>";
     const err = el("p", "err", "Falha: " + e.message); box.appendChild(err);
   }
 }
