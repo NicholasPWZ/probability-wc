@@ -280,7 +280,7 @@ function drawBestBets() {
   root.appendChild(head);
 
   if (!d.bets || !d.bets.length) { root.appendChild(el("p", "muted", "Nenhum jogo próximo na janela.")); return; }
-  root.appendChild(el("p", "muted", "Digite a odd da casa para ver se há VALOR. Confiab. = acerto histórico do mercado."));
+  root.appendChild(el("p", "muted", "⭐ Melhor prioriza mercados com alto acerto histórico (peso = confiab.², ajustada por amostra). Digite a odd da casa para ver se há VALOR."));
 
   const bets = [...d.bets];
   if (bestSort === "time") bets.sort((a, b) => (a.startTimestamp || 0) - (b.startTimestamp || 0) || b.score - a.score);

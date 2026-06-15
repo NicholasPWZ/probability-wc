@@ -220,7 +220,16 @@ async def api_reliability():
 _BESTBETS_TTL = 600           # 10 min
 _BESTBETS_WINDOW = 48 * 3600  # consider matches kicking off within 48h
 _BESTBETS_MAX_MATCHES = 16    # bound first-load latency
+_REL_SHRINK_K = 20            # pulls small-sample hit-rates toward the baseline
+_REL_BASELINE = 0.5
 _bestbets_cache: dict = {"ts": 0.0, "data": None}
+
+
+def _adjusted_reliability(entry: dict | None) -> float:
+    """Sample-size-shrunk hit-rate: tiny samples pulled toward 0.5."""
+    if not entry or not entry.get("total"):
+        return _REL_BASELINE
+    return (entry["hits"] + _REL_SHRINK_K * _REL_BASELINE) / (entry["total"] + _REL_SHRINK_K)
 
 
 def _best_bets_sync() -> dict:
@@ -245,8 +254,12 @@ def _best_bets_sync() -> dict:
             continue
         match_bets = []
         for p in a.get("predictions", []):
-            r = rel.get(p.get("category"), {}).get("rate")
-            score = round(p["prob"] * (r if r is not None else 0.55), 4)
+            entry = rel.get(p.get("category"))
+            r = entry.get("rate") if entry else None
+            # Aggressive cross-reference: weight by reliability SQUARED (sample-adjusted),
+            # so proven markets dominate and weak ones (e.g. 1X2) sink.
+            adj = _adjusted_reliability(entry)
+            score = round(p["prob"] * adj * adj, 4)
             match_bets.append({
                 "matchId": m["id"], "home": m["home"], "away": m["away"],
                 "time": m["time"], "date": m["date"], "startTimestamp": m.get("startTimestamp"),
