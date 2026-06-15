@@ -129,6 +129,19 @@
     th,td { padding:5px 6px; }
     .three .v { font-size:16px; }
     nav { overflow-x:auto; }
+    /* responsive tables -> stacked cards (no horizontal scroll) */
+    .scroll:has(table.rwd) { overflow-x:visible; }
+    table.rwd, table.rwd tbody, table.rwd tr, table.rwd td { display:block; width:100%; }
+    table.rwd tr.hr { display:none; }                     /* hide header row */
+    table.rwd tr { border:1px solid var(--border); border-radius:9px; margin:0 0 8px; padding:9px 11px; background:var(--panel2); }
+    table.rwd tr:hover td { background:transparent; }
+    table.rwd td { border:none; padding:4px 0 4px 40%; white-space:normal; text-align:right; position:relative; min-height:24px; }
+    table.rwd td::before { content:attr(data-label); position:absolute; left:0; top:5px; width:36%; color:var(--muted);
+                   font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:.04em; text-align:left; }
+    table.rwd td.t { padding:0 0 7px; text-align:left; font-weight:600; font-size:14px; margin-bottom:6px;
+                   border-bottom:1px solid var(--border); }
+    table.rwd td.t::before { content:none; }
+    table.rwd td .muted { font-size:11px; }
   }
 </style>
 </head>
@@ -326,19 +339,19 @@ function drawBestBets() {
   else if (bestSort === "rel") list.sort((a, b) => (b.reliability ?? -1) - (a.reliability ?? -1) || b.score - a.score);
   else list.sort((a, b) => b.score - a.score);
 
-  const wrap = el("div", "scroll"); const t = el("table");
+  const wrap = el("div", "scroll"); const t = el("table", "rwd");
   const firstCol = isPlayer ? "Jogador" : "Jogo";
-  t.innerHTML = `<tr><th>${firstCol}</th><th class="p">Início</th><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Confiab.</th><th class="p">Odd → Valor</th></tr>`;
+  t.innerHTML = `<tr class="hr"><th>${firstCol}</th><th class="p">Início</th><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Confiab.</th><th class="p">Odd → Valor</th></tr>`;
   for (const b of list) {
     const rel = b.reliability != null ? pc(b.reliability) : '<span class="muted">–</span>';
     const first = isPlayer
-      ? `<td>${b.player}<div class="muted">${b.home} x ${b.away}</div></td>`
-      : `<td>${b.home} <span class="muted">x</span> ${b.away}</td>`;
+      ? `<td class="t">${b.player}<div class="muted">${b.home} x ${b.away}</div></td>`
+      : `<td class="t">${b.home} <span class="muted">x</span> ${b.away}</td>`;
     t.innerHTML += `<tr>${first}`
-      + `<td class="p muted">${b.time || ""}</td>`
-      + `<td>${b.market}</td><td><b>${b.selection}</b></td>`
-      + `<td class="p">${pc(b.prob)}</td><td class="p">${rel}</td>`
-      + `<td class="oddcell">${oddInput(b.prob)}</td></tr>`;
+      + `<td class="p muted" data-label="Início">${b.time || ""}</td>`
+      + `<td data-label="Mercado">${b.market}</td><td data-label="Palpite"><b>${b.selection}</b></td>`
+      + `<td class="p" data-label="Prob.">${pc(b.prob)}</td><td class="p" data-label="Confiab.">${rel}</td>`
+      + `<td class="oddcell" data-label="Odd → Valor">${oddInput(b.prob)}</td></tr>`;
   }
   wrap.appendChild(t); root.appendChild(wrap);
 }
@@ -522,20 +535,20 @@ function pickCell(prop) {
 function playerSection(teamName, players, actuals) {
   const d = el("details", "players");
   d.appendChild(el("summary", null, `Palpites por jogador — ${teamName} (${players.length})`));
-  const wrap = el("div", "scroll"); const t = el("table");
+  const wrap = el("div", "scroll"); const t = el("table", "rwd");
   const realHead = actuals ? '<th class="p">Real C/F/Cart.</th>' : '';
-  t.innerHTML = `<tr><th>Jogador</th><th>Chutes</th><th>Faltas</th><th class="p">Cartão</th>${realHead}<th class="p">Conf.</th></tr>`;
+  t.innerHTML = `<tr class="hr"><th>Jogador</th><th>Chutes</th><th>Faltas</th><th class="p">Cartão</th>${realHead}<th class="p">Conf.</th></tr>`;
   for (const p of players) {
-    if (!p.appearances) { t.innerHTML += `<tr><td>${p.name}</td><td colspan="${actuals?5:4}" class="muted">sem amostras</td></tr>`; continue; }
-    const cardCell = p.card ? `<b>${pct(p.card.probAtLeastOne)}</b><div class="muted">recebe cartão</div>` : '–';
+    if (!p.appearances) { t.innerHTML += `<tr><td class="t">${p.name}</td><td class="muted" data-label="">sem amostras</td></tr>`; continue; }
+    const cardCell = p.card ? `<b>${pct(p.card.probAtLeastOne)}</b> <span class="muted">recebe cartão</span>` : '–';
     let realCell = '';
     if (actuals) {
       const ra = actuals[p.playerId];
-      realCell = ra ? `<td class="p">${ra.shots == null ? '–' : ra.shots} / ${ra.fouls} / ${ra.yellow}</td>` : '<td class="p muted">não jogou</td>';
+      realCell = ra ? `<td class="p" data-label="Real C/F/Cart.">${ra.shots == null ? '–' : ra.shots} / ${ra.fouls} / ${ra.yellow}</td>` : '<td class="p muted" data-label="Real">não jogou</td>';
     }
-    t.innerHTML += `<tr><td>${p.name} <span class="muted">(${p.appearances}j)</span></td>`
-      + `<td>${pickCell(p.shots)}</td><td>${pickCell(p.fouls)}</td>`
-      + `<td class="p">${cardCell}</td>${realCell}<td class="p conf-${p.confidence}">${p.confidence}</td></tr>`;
+    t.innerHTML += `<tr><td class="t">${p.name} <span class="muted">(${p.appearances}j)</span></td>`
+      + `<td data-label="Chutes">${pickCell(p.shots)}</td><td data-label="Faltas">${pickCell(p.fouls)}</td>`
+      + `<td class="p" data-label="Cartão">${cardCell}</td>${realCell}<td class="p conf-${p.confidence}" data-label="Confiança">${p.confidence}</td></tr>`;
   }
   wrap.appendChild(t); d.appendChild(wrap);
   d.appendChild(el("p", "muted", "Palpite = linha mais provável. “+1.5 chutes” = mais de 1,5 finalizações; “−0.5” = menos. Cartão = chance de receber ao menos 1."));
@@ -545,12 +558,12 @@ function playerSection(teamName, players, actuals) {
 function renderPredictions(preds) {
   const box = el("div", "preds");
   box.appendChild(el("h3", null, ICON.target + "<span>Previsões do modelo</span>"));
-  const wrap = el("div", "scroll"); const t = el("table");
-  t.innerHTML = '<tr><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p" title="Acerto histórico do modelo neste mercado">Confiab.</th><th class="p">Odd → Valor</th></tr>';
+  const wrap = el("div", "scroll"); const t = el("table", "rwd");
+  t.innerHTML = '<tr class="hr"><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p" title="Acerto histórico do modelo neste mercado">Confiab.</th><th class="p">Odd → Valor</th></tr>';
   for (const p of preds)
-    t.innerHTML += `<tr><td>${p.market}</td><td><b>${p.selection}</b></td>`
-      + `<td class="p">${pc(p.prob)}</td><td class="p">${relBadge(p.category)}</td>`
-      + `<td class="oddcell">${oddInput(p.prob)}</td></tr>`;
+    t.innerHTML += `<tr><td class="t">${p.market}</td><td data-label="Palpite"><b>${p.selection}</b></td>`
+      + `<td class="p" data-label="Prob.">${pc(p.prob)}</td><td class="p" data-label="Confiab.">${relBadge(p.category)}</td>`
+      + `<td class="oddcell" data-label="Odd → Valor">${oddInput(p.prob)}</td></tr>`;
   wrap.appendChild(t); box.appendChild(wrap);
   box.appendChild(el("p", "muted", "Confiab. = acerto histórico do modelo no mercado. Digite a odd da casa para ver se há VALOR (modelo > mercado)."));
   return box;
@@ -578,9 +591,9 @@ function renderAccuracy(a) {
     const mid = tot.lines[Math.floor(tot.lines.length / 2)];
     rows.push([tp.label + ' (total)', `${mid.modelSide} ${mid.line} (${pct(mid.predOver)})`, `${tot.actual} (prev. ${tot.expected})`, mid.correct]);
   }
-  const wrap = el("div", "scroll"); const t = el("table");
-  t.innerHTML = '<tr><th>Mercado</th><th>Previsão</th><th>Real</th><th class="p">Acerto</th></tr>';
-  for (const [m, pr, re, ok] of rows) t.innerHTML += `<tr><td>${m}</td><td>${pr}</td><td>${re}</td><td class="p">${chk(ok)}</td></tr>`;
+  const wrap = el("div", "scroll"); const t = el("table", "rwd");
+  t.innerHTML = '<tr class="hr"><th>Mercado</th><th>Previsão</th><th>Real</th><th class="p">Acerto</th></tr>';
+  for (const [m, pr, re, ok] of rows) t.innerHTML += `<tr><td class="t">${m}</td><td data-label="Previsão">${pr}</td><td data-label="Real">${re}</td><td class="p" data-label="Acerto">${chk(ok)}</td></tr>`;
   wrap.appendChild(t);
   card.innerHTML = html; card.appendChild(wrap);
   card.appendChild(el("p", "muted", "Previsões geradas só com jogos anteriores a esta partida (pré-jogo)."));
