@@ -29,9 +29,18 @@ SYSTEM_INSTRUCTION = (
     "- Use ONLY the data provided. Never invent injuries, news, lineups, or stats. "
     "If the sample is small or the lineup is provisional, lower your confidence.\n"
     "- Prefer markets with a clear edge AND good historical reliability. Skip coin-flips.\n"
-    "- Output your STRONGEST 5-8 selections, each with YOUR probability (0-1, "
-    "calibrated — don't inflate), a confidence level, and a one-line data-grounded "
-    "rationale that, when relevant, cites the market's historical hit-rate."
+    "- DIVERSIFY — this is mandatory. Your selections must span SEVERAL different market "
+    "families: match result (1X2) / double chance, over-under goals, both teams to score, "
+    "corners, cards, shots / shots on target, and player props (player shots, fouls, cards). "
+    "Do NOT return a list that is exclusively 'Under' (or exclusively 'Over'). Low-scoring "
+    "form makes Unders tempting, but a useful slate also includes a likely RESULT, a BTTS "
+    "call, OVER picks where a matchup supports them (e.g. an attacking team vs a leaky "
+    "defense, or a player likely to shoot), and so on. If your edges cluster on one side, "
+    "still include the strongest picks from other families and the opposite direction. "
+    "Aim for at most ~half your picks on any single direction.\n"
+    "- Output your STRONGEST 5-8 selections (varied per the rule above), each with YOUR "
+    "probability (0-1, calibrated — don't inflate), a confidence level, and a one-line "
+    "data-grounded rationale that, when relevant, cites the market's historical hit-rate."
 )
 
 
