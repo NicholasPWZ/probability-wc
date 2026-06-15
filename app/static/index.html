@@ -459,27 +459,45 @@ function probList(pairs) {
   return t;
 }
 
+// favored pick at the line nearest the expected value -> {label, prob}
+function pickFromLines(lines, expected) {
+  if (!lines) return null;
+  let best = null, bd = Infinity;
+  for (const k of Object.keys(lines)) {
+    const d = Math.abs(parseFloat(k) - (expected == null ? parseFloat(k) : expected));
+    if (d < bd) { bd = d; best = k; }
+  }
+  const v = lines[best];
+  return v.over >= v.under ? { label: "+" + best, prob: v.over } : { label: "−" + best, prob: v.under };
+}
+
+function pickCell(prop) {
+  if (!prop || !prop.lines) return '<span class="muted">sem dados</span>';
+  const pk = pickFromLines(prop.lines, prop.expected);
+  return `<b>${pk.label}</b> <span style="color:${pColor(pk.prob)}">${(pk.prob*100).toFixed(0)}%</span>`
+    + `<div class="muted">esperado ${prop.expected}</div>`;
+}
+
 function playerSection(teamName, players, actuals) {
   const d = el("details", "players");
-  d.appendChild(el("summary", null, `Jogadores — ${teamName} (${players.length})`));
+  d.appendChild(el("summary", null, `Palpites por jogador — ${teamName} (${players.length})`));
   const wrap = el("div", "scroll"); const t = el("table");
-  const realHead = actuals ? '<th class="p">Real C/F/🟨</th>' : '';
-  t.innerHTML = `<tr><th>Jogador</th><th class="p">Chutes .5/1.5/2.5</th><th class="p">Faltas .5/1.5</th><th class="p">Cartão</th>${realHead}<th class="p">Conf.</th></tr>`;
+  const realHead = actuals ? '<th class="p">Real C / F / 🟨</th>' : '';
+  t.innerHTML = `<tr><th>Jogador</th><th>Chutes</th><th>Faltas</th><th class="p">Cartão</th>${realHead}<th class="p">Conf.</th></tr>`;
   for (const p of players) {
     if (!p.appearances) { t.innerHTML += `<tr><td>${p.name}</td><td colspan="${actuals?5:4}" class="muted">sem amostras</td></tr>`; continue; }
-    const s = p.shots && p.shots.lines, f = p.fouls && p.fouls.lines;
-    const shotsCell = s ? `${pct(s["0.5"].over)} / ${pct(s["1.5"].over)} / ${pct(s["2.5"].over)}` : '<span class="muted">sem dados</span>';
-    const foulsCell = f ? `${pct(f["0.5"].over)} / ${pct(f["1.5"].over)}` : '<span class="muted">–</span>';
-    const cardCell = p.card ? pct(p.card.probAtLeastOne) : '–';
+    const cardCell = p.card ? `<b>${pct(p.card.probAtLeastOne)}</b><div class="muted">recebe cartão</div>` : '–';
     let realCell = '';
     if (actuals) {
       const ra = actuals[p.playerId];
       realCell = ra ? `<td class="p">${ra.shots == null ? '–' : ra.shots} / ${ra.fouls} / ${ra.yellow}</td>` : '<td class="p muted">não jogou</td>';
     }
-    t.innerHTML += `<tr><td>${p.name} <span class="muted">(${p.appearances}j)</span></td>
-      <td class="p">${shotsCell}</td><td class="p">${foulsCell}</td><td class="p">${cardCell}</td>${realCell}<td class="p conf-${p.confidence}">${p.confidence}</td></tr>`;
+    t.innerHTML += `<tr><td>${p.name} <span class="muted">(${p.appearances}j)</span></td>`
+      + `<td>${pickCell(p.shots)}</td><td>${pickCell(p.fouls)}</td>`
+      + `<td class="p">${cardCell}</td>${realCell}<td class="p conf-${p.confidence}">${p.confidence}</td></tr>`;
   }
   wrap.appendChild(t); d.appendChild(wrap);
+  d.appendChild(el("p", "muted", "Palpite = linha mais provável. “+1.5 chutes” = mais de 1,5 finalizações; “−0.5” = menos. Cartão = chance de receber ao menos 1."));
   return d;
 }
 
