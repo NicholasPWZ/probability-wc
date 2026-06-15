@@ -268,9 +268,17 @@ async function boot() {
   } catch (e) {
     root.innerHTML = '<p class="err">Falha ao carregar jogos: ' + e.message + '</p>';
   }
-  // Reliability is slow on a cold cache; fetch it in the BACKGROUND so it never
-  // blocks the match list. Badges fill in once it resolves.
-  api("/api/reliability").then(r => { RELIABILITY = r.byMarket; }).catch(() => {});
+  ensureReliability();  // warm in background; never blocks the match list
+}
+
+let _relPromise = null;
+function ensureReliability() {
+  if (RELIABILITY) return Promise.resolve();
+  if (!_relPromise)
+    _relPromise = api("/api/reliability")
+      .then(r => { RELIABILITY = r.byMarket; })
+      .catch(() => { _relPromise = null; });  // allow retry on failure
+  return _relPromise;
 }
 
 function renderMatchList(root, filter, emptyMsg) {
@@ -385,8 +393,11 @@ function matchRow(m) {
 async function loadAnalysis(wrap, detail, id) {
   wrap.dataset.loaded = "1";
   detail.innerHTML = '<p class="muted"><span class="spin"></span> Coletando estatísticas e calculando…</p>';
-  try { renderAnalysis(detail, id, await api("/api/analyze/" + id)); }
-  catch (e) { wrap.dataset.loaded = ""; detail.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
+  try {
+    // fetch reliability in parallel so the Confiab. badges are always ready at render
+    const [data] = await Promise.all([api("/api/analyze/" + id), ensureReliability()]);
+    renderAnalysis(detail, id, data);
+  } catch (e) { wrap.dataset.loaded = ""; detail.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
 }
 
 function mlBox(title, rows) {
