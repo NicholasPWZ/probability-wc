@@ -197,6 +197,7 @@ const ICON = {
   shield: _svg('<path d="M12 3.5l7 2.5v5c0 4.4-3 7.7-7 8.9-4-1.2-7-4.5-7-8.9V6z"/>'),
 };
 ICON.spark = _svg('<path d="M12 3l1.8 5L19 9.8l-5.2 1.8L12 17l-1.8-5.4L5 9.8 10.2 8z"/>');
+ICON.copy = _svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5"/>');
 
 // inject brand mark + nav icons (DOM is ready: script is at end of body)
 (function iconizeChrome() {
@@ -466,6 +467,9 @@ function renderAnalysis(detail, id, data) {
   refreshBtn.disabled = confirmed;
   refreshBtn.onclick = () => doRefresh(detail, id, refreshBtn);
   bar.appendChild(refreshBtn);
+  const copyBtn = el("button", "", ICON.copy + "<span>Copiar</span>");
+  copyBtn.onclick = () => copyMatch(id, data, copyBtn);
+  bar.appendChild(copyBtn);
   detail.appendChild(bar);
 
   // ---- build sections ----
@@ -686,6 +690,47 @@ function renderAccuracy(a) {
   return card;
 }
 
+async function copyMatch(id, data, btn) {
+  const old = btn.innerHTML;
+  btn.innerHTML = '<span class="spin"></span><span>Copiando…</span>';
+  const home = data.event.home.name, away = data.event.away.name;
+  const lines = [`${home} x ${away} — Copa do Mundo 2026 (Bet Stats)`, ""];
+  lines.push("PREVISÕES DO MODELO");
+  for (const p of data.predictions || []) {
+    const exp = p.expected != null ? ` [esp. ${p.expected}]` : "";
+    lines.push(`• ${p.market}: ${p.selection} — ${(p.prob * 100).toFixed(0)}%${exp}`);
+  }
+  try {
+    const g = await api("/api/gemini/" + id);
+    if (g && g.final) {
+      const f = g.final;
+      lines.push("", "ANÁLISE FINAL DA IA (consenso)");
+      if (f.summary) lines.push(f.summary);
+      if (f.consensusBets && f.consensusBets.length) {
+        lines.push("Apostas de consenso:");
+        for (const b of f.consensusBets) lines.push(`• ${b.market}: ${b.selection} (${b.confidence})`);
+      }
+      if (f.createdAt) lines.push(`(gerada em ${f.createdAt})`);
+    } else {
+      lines.push("", "ANÁLISE FINAL DA IA: ainda não gerada.");
+    }
+  } catch (e) {
+    lines.push("", "(análise da IA indisponível)");
+  }
+  const text = lines.join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch (_) {}
+    ta.remove();
+  }
+  btn.innerHTML = ICON.check + "<span>Copiado!</span>";
+  setTimeout(() => { btn.innerHTML = old; }, 2000);
+}
+
 async function doRefresh(detail, id, btn) {
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Atualizando…';
   try { renderAnalysis(detail, id, await api("/api/refresh/" + id, { method: "POST" })); }
@@ -780,44 +825,74 @@ async function loadDashboard(force) {
   catch (e) { root.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
 }
 
+function dashTable(headHtml, rowsHtml) {
+  const wrap = el("div", "scroll"); const t = el("table", "rwd");
+  t.innerHTML = headHtml + rowsHtml;
+  wrap.appendChild(t); return wrap;
+}
+
 function renderDashboard(root, d) {
   root.innerHTML = "";
   if (!d.matchesEvaluated) { root.innerHTML = '<p class="muted">Ainda não há jogos finalizados para avaliar.</p>'; return; }
-  root.appendChild(el("p", "muted", `Baseado em ${d.matchesEvaluated} jogo(s) finalizado(s). Previsões pré-jogo.`));
+  root.appendChild(el("p", "muted", `Baseado em ${d.matchesEvaluated} jogo(s) finalizado(s). Previsões pré-jogo (forma só de jogos anteriores).`));
 
+  const dir = d.markets.direction || {};
   const three = el("div", "three"); three.style.marginBottom = "14px";
   three.innerHTML = `
     <div><div class="v" style="color:${pColor(d.markets.overall.rate)}">${pct(d.markets.overall.rate)}</div><div class="l">Acerto geral (${d.markets.overall.hits}/${d.markets.overall.total})</div></div>
     <div><div class="v" style="color:${pColor(d.result.accuracy)}">${pct(d.result.accuracy)}</div><div class="l">Resultado 1X2 (${d.result.correct}/${d.result.total})</div></div>
-    <div><div class="v">${d.result.avgBrier}</div><div class="l">Brier médio</div></div>`;
+    <div><div class="v">${d.result.avgBrier}</div><div class="l">Brier médio</div></div>
+    <div><div class="v" style="color:${pColor((dir.over||{}).rate)}">${pct((dir.over||{}).rate)}</div><div class="l">Over (${(dir.over||{}).hits||0}/${(dir.over||{}).total||0})</div></div>
+    <div><div class="v" style="color:${pColor((dir.under||{}).rate)}">${pct((dir.under||{}).rate)}</div><div class="l">Under (${(dir.under||{}).hits||0}/${(dir.under||{}).total||0})</div></div>`;
   root.appendChild(three);
 
   const grid = el("div", "grid");
-  // by market
+
+  // by market (with avg confidence vs hit-rate -> per-market calibration)
   const mc = el("div", "card"); mc.appendChild(el("h3", null, "Acerto por mercado"));
-  const mw = el("div", "scroll"); const mt = el("table");
-  mt.innerHTML = '<tr><th>Mercado</th><th class="p">Acertos</th><th class="p">Taxa</th></tr>';
   const sorted = Object.entries(d.markets.byMarket).sort((a, b) => (b[1].rate || 0) - (a[1].rate || 0));
-  for (const [k, v] of sorted) mt.innerHTML += `<tr><td>${k}</td><td class="p">${v.hits}/${v.total}</td><td class="p">${pc(v.rate)}</td></tr>`;
-  mw.appendChild(mt); mc.appendChild(mw); grid.appendChild(mc);
+  let mrows = "";
+  for (const [k, v] of sorted)
+    mrows += `<tr><td class="t">${k}</td><td class="p" data-label="Acertos">${v.hits}/${v.total}</td>`
+      + `<td class="p" data-label="Taxa">${pc(v.rate)}</td><td class="p" data-label="Conf. média">${v.avgConf!=null?pct(v.avgConf):"–"}</td></tr>`;
+  mc.appendChild(dashTable('<tr class="hr"><th>Mercado</th><th class="p">Acertos</th><th class="p">Taxa</th><th class="p">Conf. média</th></tr>', mrows));
+  mc.appendChild(el("p", "muted", "Conf. média ≈ Taxa indica mercado bem calibrado; Conf. > Taxa = confiante demais."));
+  grid.appendChild(mc);
+
+  // bias: predicted vs actual per stat
+  if (d.bias && d.bias.length) {
+    const bc = el("div", "card"); bc.appendChild(el("h3", null, "Viés do modelo (previsto × real)"));
+    let brows = "";
+    for (const b of d.bias) {
+      const col = Math.abs(b.error) >= 1 ? "var(--warn)" : "var(--muted)";
+      brows += `<tr><td class="t">${b.label}</td><td class="p" data-label="Previsto (méd)">${b.predicted}</td>`
+        + `<td class="p" data-label="Real (méd)">${b.actual}</td><td class="p" data-label="Erro" style="color:${col}">${b.error>0?"+":""}${b.error}</td></tr>`;
+    }
+    bc.appendChild(dashTable('<tr class="hr"><th>Estatística</th><th class="p">Previsto (méd)</th><th class="p">Real (méd)</th><th class="p">Erro</th></tr>', brows));
+    bc.appendChild(el("p", "muted", "Erro = previsto − real (média por jogo). Positivo = modelo superestima o total."));
+    grid.appendChild(bc);
+  }
 
   // calibration
   const cc = el("div", "card"); cc.appendChild(el("h3", null, "Calibração (confiança × realidade)"));
-  const cw = el("div", "scroll"); const ct = el("table");
-  ct.innerHTML = '<tr><th>Confiança</th><th class="p">n</th><th class="p">Previsto</th><th class="p">Real</th></tr>';
-  for (const c of d.calibration) ct.innerHTML += `<tr><td>${c.range}</td><td class="p">${c.n}</td><td class="p">${pc(c.predicted)}</td><td class="p">${pc(c.actual)}</td></tr>`;
-  cw.appendChild(ct); cc.appendChild(cw);
+  let crows = "";
+  for (const c of d.calibration)
+    crows += `<tr><td class="t">${c.range}</td><td class="p" data-label="n">${c.n}</td><td class="p" data-label="Previsto">${pc(c.predicted)}</td><td class="p" data-label="Real">${pc(c.actual)}</td></tr>`;
+  cc.appendChild(dashTable('<tr class="hr"><th>Confiança</th><th class="p">n</th><th class="p">Previsto</th><th class="p">Real</th></tr>', crows));
   cc.appendChild(el("p", "muted", "Previsto ≈ Real significa modelo bem calibrado."));
   grid.appendChild(cc);
+
   root.appendChild(grid);
 
-  // per match
-  const pm = el("div", "card"); pm.style.marginTop = "14px"; pm.appendChild(el("h3", null, "Por jogo"));
-  const pw = el("div", "scroll"); const pt = el("table");
-  pt.innerHTML = '<tr><th>Jogo</th><th class="p">Placar</th><th class="p">1X2</th><th class="p">Mercados</th></tr>';
+  // per match (richer)
+  const pm = el("div", "card"); pm.style.marginTop = "12px"; pm.appendChild(el("h3", null, "Por jogo"));
+  let prows = "";
   for (const m of d.perMatch)
-    pt.innerHTML += `<tr><td>${m.home} x ${m.away}</td><td class="p">${m.score}</td><td class="p">${chk(m.resultCorrect)}</td><td class="p">${pc(m.marketHitRate)}</td></tr>`;
-  pw.appendChild(pt); pm.appendChild(pw); root.appendChild(pm);
+    prows += `<tr><td class="t">${m.home} x ${m.away}</td><td class="p" data-label="Placar">${m.score}</td>`
+      + `<td class="p" data-label="1X2 (palpite)">${m.resultPick} ${pc(m.resultProb)} ${chk(m.resultCorrect)}</td>`
+      + `<td class="p" data-label="Mercados">${m.marketHits}/${m.marketTotal} ${pc(m.marketHitRate)}</td></tr>`;
+  pm.appendChild(dashTable('<tr class="hr"><th>Jogo</th><th class="p">Placar</th><th class="p">1X2 (palpite)</th><th class="p">Mercados</th></tr>', prows));
+  root.appendChild(pm);
 }
 
 boot();

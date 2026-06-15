@@ -86,17 +86,27 @@ def _negbin_pmf(k: int, mean: float, var: float) -> float:
     )
 
 
+DISPERSION_FLOOR = 1.4   # football counts are overdispersed; floor tempers extreme tails
+PROB_CAP = 0.93          # never claim more than this certainty (real "99%" picks miss ~12%)
+# Structural correction for stats the model systematically biases (tournament games
+# are more intense than mixed recent form). Measured via dashboard "Viés do modelo".
+STAT_CORRECTION = {"shots": 1.12}
+
+
 class CountDist:
     """A discrete count distribution with a target mean and optional variance.
 
     Uses Poisson unless ``var > mean`` (overdispersion), in which case a
-    Negative Binomial with the same mean & variance is used.
+    Negative Binomial with the same mean & variance is used. A variance floor of
+    mean*DISPERSION_FLOOR is always applied so probabilities aren't over-confident
+    (calibration fix: real counts vary more than a pure Poisson assumes).
     """
 
     def __init__(self, mean: float, var: float | None = None) -> None:
         self.mean = max(mean, 1e-6)
-        self.var = var
-        self._overdispersed = var is not None and var > self.mean * 1.05
+        floor = self.mean * DISPERSION_FLOOR
+        self.var = max(var if var is not None else 0.0, floor)
+        self._overdispersed = self.var > self.mean * 1.05
 
     def pmf(self, k: int) -> float:
         if self._overdispersed:
@@ -104,10 +114,10 @@ class CountDist:
         return _poisson_pmf(k, self.mean)
 
     def over(self, line: float, cap: int = 60) -> float:
-        """P(X > line) for a .5 line."""
+        """P(X > line) for a .5 line, capped so confidence isn't overstated."""
         k0 = math.floor(line)
         cdf = sum(self.pmf(k) for k in range(0, k0 + 1))
-        return _round(1.0 - cdf)
+        return round(min(PROB_CAP, max(1 - PROB_CAP, 1.0 - cdf)), 4)
 
     def top(self, n: int = 3, cap: int = 40) -> list[dict]:
         """The n most probable exact counts: [{value, prob}, ...]."""
@@ -150,35 +160,49 @@ def _score_matrix(lh: float, la: float) -> list[list[float]]:
     return matrix
 
 
+STRENGTH_SHRINK_K = 5  # regularize noisy small-sample attack/defense toward league mean
+GOALS_CAL_K = 0.85     # mild calibration shrink for matrix-derived binaries (anti-overconfidence)
+
+
 def _goals_market(home: dict, away: dict, hfa: float = 1.0) -> dict:
     h_gf, h_ga = _mean(home["goalsFor"]), _mean(home["goalsAgainst"])
     a_gf, a_ga = _mean(away["goalsFor"]), _mean(away["goalsAgainst"])
+    n_h = len([x for x in home["goalsFor"] if x is not None])
+    n_a = len([x for x in away["goalsFor"] if x is not None])
 
     baseline = _mean(list(home["goalsFor"]) + list(away["goalsFor"])) or 1.35
     baseline = max(baseline, 0.3)
 
-    def strength(v):
-        return (v / baseline) if v is not None else 1.0
+    def strength(v, n):
+        # shrink the raw ratio toward 1.0 (league average) by sample size
+        if v is None:
+            return 1.0
+        raw = v / baseline
+        return 1 + (raw - 1) * (n / (n + STRENGTH_SHRINK_K))
 
-    lh = strength(h_gf) * strength(a_ga) * baseline * hfa
-    la = strength(a_gf) * strength(h_ga) * baseline / hfa
+    lh = strength(h_gf, n_h) * strength(a_ga, n_a) * baseline * hfa
+    la = strength(a_gf, n_a) * strength(h_ga, n_h) * baseline / hfa
     lh = min(max(lh, 0.1), 6.0)
     la = min(max(la, 0.1), 6.0)
 
     m = _score_matrix(lh, la)
 
+    def cal(p):  # pull toward 0.5 to fix over-confidence
+        return _round(0.5 + (p - 0.5) * GOALS_CAL_K)
+
     home_win = sum(m[i][j] for i in range(MAX_GOALS + 1) for j in range(i))
     draw = sum(m[i][i] for i in range(MAX_GOALS + 1))
     away_win = sum(m[i][j] for j in range(MAX_GOALS + 1) for i in range(j))
 
-    # over/under & btts
+    # over/under & btts (calibrated)
     ou = {}
     for line in GOAL_LINES:
         over = sum(m[i][j] for i in range(MAX_GOALS + 1) for j in range(MAX_GOALS + 1) if i + j > line)
-        ou[str(line)] = {"over": _round(over), "under": _round(1 - over)}
+        over = cal(over)
+        ou[str(line)] = {"over": over, "under": _round(1 - over)}
     p_h0 = sum(m[0][j] for j in range(MAX_GOALS + 1))
     p_a0 = sum(m[i][0] for i in range(MAX_GOALS + 1))
-    btts_yes = _round(1 - p_h0 - p_a0 + m[0][0])
+    btts_yes = cal(1 - p_h0 - p_a0 + m[0][0])
 
     # correct score top 7
     cells = [((i, j), m[i][j]) for i in range(7) for j in range(7)]
@@ -214,11 +238,11 @@ def _goals_market(home: dict, away: dict, hfa: float = 1.0) -> dict:
     ou_calls.sort(key=lambda x: x["prob"], reverse=True)
     most_likely["overUnder"] = ou_calls[:3]
 
-    # asian handicap (half lines, no push) — home perspective
+    # asian handicap (half lines, no push) — home perspective (calibrated)
     handicap = {}
     for line in HANDICAP_LINES:
-        home_cov = sum(m[i][j] for i in range(MAX_GOALS + 1) for j in range(MAX_GOALS + 1) if (i - j) + line > 0)
-        handicap[f"{line:+g}"] = {"home": _round(home_cov), "away": _round(1 - home_cov)}
+        home_cov = cal(sum(m[i][j] for i in range(MAX_GOALS + 1) for j in range(MAX_GOALS + 1) if (i - j) + line > 0))
+        handicap[f"{line:+g}"] = {"home": home_cov, "away": _round(1 - home_cov)}
 
     return {
         "expectedGoals": {"home": round(lh, 2), "away": round(la, 2), "total": round(lh + la, 2)},
@@ -269,6 +293,12 @@ def _team_props(home: dict, away: dict, ref_factor: float = 1.0) -> dict:
         if key == "yellowCards" and ref_factor != 1.0:
             home_dist = _scaled(home_dist, ref_factor) if home_dist else None
             away_dist = _scaled(away_dist, ref_factor) if away_dist else None
+        # Tournament-intensity correction for stats the model systematically biases
+        # (measured on finished WC games — see dashboard "Viés do modelo").
+        corr = STAT_CORRECTION.get(key, 1.0)
+        if corr != 1.0:
+            home_dist = _scaled(home_dist, corr) if home_dist else None
+            away_dist = _scaled(away_dist, corr) if away_dist else None
         entry = {"label": STAT_LABELS[key]}
         # Lines bracket each scope's own expected value.
         if home_dist:

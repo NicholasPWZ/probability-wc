@@ -130,6 +130,7 @@ def _finished_accuracy() -> dict:
 
     per_match, all_calls = [], []
     result_correct, brier_sum, evaluated = 0, 0.0, 0
+    bias_acc: dict[str, dict] = {}   # stat -> {label, predSum, actSum, n} (total scope)
     for m in finished:
         try:
             a = _analyze_sync(m["id"]).get("accuracy")
@@ -145,18 +146,50 @@ def _finished_accuracy() -> dict:
         per_match.append({
             "id": m["id"], "home": m["home"], "away": m["away"], "date": m["date"],
             "score": a["result"]["scoreStr"], "resultPick": a["result"]["predicted"],
+            "resultProb": a["result"]["predictedProb"], "resultActual": a["result"]["actual"],
             "resultCorrect": s["resultCorrect"], "marketHitRate": s["marketHitRate"],
+            "marketHits": s["marketLineHits"], "marketTotal": s["marketLineTotal"],
         })
+        # systematic bias: predicted vs actual per stat (total scope)
+        for key, tp in (a.get("teamProps") or {}).items():
+            tot = (tp.get("scopes") or {}).get("total")
+            if not tot:
+                continue
+            e = bias_acc.setdefault(key, {"label": tp.get("label", key), "predSum": 0.0, "actSum": 0.0, "n": 0})
+            e["predSum"] += tot["expected"]
+            e["actSum"] += tot["actual"]
+            e["n"] += 1
 
     by_market: dict[str, dict] = {}
     for c in all_calls:
-        b = by_market.setdefault(c["market"], {"hits": 0, "total": 0})
+        b = by_market.setdefault(c["market"], {"hits": 0, "total": 0, "confSum": 0.0})
         b["total"] += 1
         b["hits"] += 1 if c["correct"] else 0
+        b["confSum"] += c.get("conf", 0)
     for b in by_market.values():
         b["rate"] = round(b["hits"] / b["total"], 3) if b["total"] else None
+        b["avgConf"] = round(b["confSum"] / b["total"], 3) if b["total"] else None
+        del b["confSum"]
+
+    # over vs under direction split (across all line markets)
+    direction = {}
+    for sidekey in ("over", "under"):
+        sub = [c for c in all_calls if c.get("side") == sidekey]
+        h = sum(1 for c in sub if c["correct"])
+        direction[sidekey] = {"hits": h, "total": len(sub),
+                              "rate": round(h / len(sub), 3) if sub else None}
+
+    bias = []
+    for key, e in bias_acc.items():
+        if not e["n"]:
+            continue
+        pred, act = e["predSum"] / e["n"], e["actSum"] / e["n"]
+        bias.append({"label": e["label"], "predicted": round(pred, 2), "actual": round(act, 2),
+                     "error": round(pred - act, 2), "n": e["n"]})
+    bias.sort(key=lambda x: abs(x["error"]), reverse=True)
 
     return {"per_match": per_match, "all_calls": all_calls, "by_market": by_market,
+            "direction": direction, "bias": bias,
             "result_correct": result_correct, "brier_sum": brier_sum, "evaluated": evaluated}
 
 
@@ -204,7 +237,9 @@ def _dashboard_sync() -> dict:
             "overall": {"hits": total_hits, "total": total_calls,
                         "rate": round(total_hits / total_calls, 3) if total_calls else None},
             "byMarket": fa["by_market"],
+            "direction": fa["direction"],
         },
+        "bias": fa["bias"],
         "calibration": calibration,
         "perMatch": fa["per_match"],
     }

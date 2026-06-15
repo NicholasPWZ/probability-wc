@@ -80,9 +80,9 @@ def evaluate(pred: dict, actuals: dict) -> dict:
     total = 0
     calls: list[dict] = []  # one record per binary call, for the aggregate dashboard
 
-    def add_call(market: str, conf: float, correct: bool | None):
+    def add_call(market: str, conf: float, correct: bool | None, side: str | None = None):
         if correct is not None:
-            calls.append({"market": market, "conf": conf, "correct": correct})
+            calls.append({"market": market, "conf": conf, "correct": correct, "side": side})
 
     def tally(items, market: str | None = None):
         nonlocal hits, total
@@ -91,7 +91,7 @@ def evaluate(pred: dict, actuals: dict) -> dict:
                 total += 1
                 hits += 1 if it["correct"] else 0
                 if market:
-                    add_call(market, max(it["predOver"], 1 - it["predOver"]), it["correct"])
+                    add_call(market, max(it["predOver"], 1 - it["predOver"]), it["correct"], it["modelSide"])
 
     # --- result (1X2) ---
     res = pred["goals"]["result"]
@@ -108,7 +108,7 @@ def evaluate(pred: dict, actuals: dict) -> dict:
         "scoreStr": f"{int(a_goals['home'])}-{int(a_goals['away'])}",
     }
 
-    add_call("1X2", result_eval["predictedProb"], result_eval["correct"])
+    add_call("1X2", result_eval["predictedProb"], result_eval["correct"], "pick")
 
     # --- over/under goals ---
     ou = _eval_lines(pred["goals"]["overUnder"], a_goals["total"])
@@ -120,7 +120,7 @@ def evaluate(pred: dict, actuals: dict) -> dict:
     if btts_correct is not None:
         total += 1
         hits += 1 if btts_correct else 0
-    add_call("Ambos marcam", max(btts_yes, 1 - btts_yes), btts_correct)
+    add_call("Ambos marcam", max(btts_yes, 1 - btts_yes), btts_correct, "yes" if btts_yes > 0.5 else "no")
     btts_eval = {"predYes": btts_yes, "actual": a_goals["btts"],
                  "modelSide": "yes" if btts_yes > 0.5 else "no", "correct": btts_correct}
 
@@ -160,13 +160,13 @@ def evaluate(pred: dict, actuals: dict) -> dict:
                     if it["correct"] is not None:
                         player_total += 1
                         player_hits += 1 if it["correct"] else 0
-                        add_call("Chutes (jogador)", max(it["predOver"], 1 - it["predOver"]), it["correct"])
+                        add_call("Chutes (jogador)", max(it["predOver"], 1 - it["predOver"]), it["correct"], it["modelSide"])
             if pp.get("fouls", {}).get("lines"):
                 for it in _eval_lines(pp["fouls"]["lines"], act["fouls"]):
                     if it["correct"] is not None:
                         player_total += 1
                         player_hits += 1 if it["correct"] else 0
-                        add_call("Faltas (jogador)", max(it["predOver"], 1 - it["predOver"]), it["correct"])
+                        add_call("Faltas (jogador)", max(it["predOver"], 1 - it["predOver"]), it["correct"], it["modelSide"])
             card_prob = pp.get("card", {}).get("probAtLeastOne")
             if card_prob is not None:
                 c = _side_correct(card_prob, act["yellow"] >= 1)
