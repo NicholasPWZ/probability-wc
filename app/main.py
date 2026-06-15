@@ -190,8 +190,36 @@ async def api_dashboard():
         raise HTTPException(status_code=502, detail=f"Data source unavailable: {exc}")
 
 
+_GEMINI_LIMIT = 3
+_gemini_store: dict[int, list] = {}
+_gemini_lock = threading.Lock()
+
+
+def _gemini_payload(event_id: int, limit_reached: bool = False) -> dict:
+    with _gemini_lock:
+        items = list(_gemini_store.get(event_id, []))
+    return {
+        "enabled": get_settings().gemini_enabled,
+        "limit": _GEMINI_LIMIT,
+        "used": len(items),
+        "remaining": max(0, _GEMINI_LIMIT - len(items)),
+        "limitReached": limit_reached or len(items) >= _GEMINI_LIMIT,
+        "analyses": items,
+    }
+
+
+@betstats.get("/api/gemini/{event_id}")
+async def api_gemini_list(event_id: int):
+    """Return the stored AI analyses for a match (without consuming one)."""
+    return _gemini_payload(event_id)
+
+
 @betstats.post("/api/gemini/{event_id}")
-async def api_gemini(event_id: int):
+async def api_gemini_run(event_id: int):
+    """Run one new AI analysis (max 3 per match) and return all stored ones."""
+    with _gemini_lock:
+        if len(_gemini_store.get(event_id, [])) >= _GEMINI_LIMIT:
+            return _gemini_payload(event_id, limit_reached=True)
     try:
         dataset = await run_in_threadpool(build_dataset, event_id)
         engine_output = await run_in_threadpool(engine.analyze, dataset)
@@ -202,7 +230,11 @@ async def api_gemini(event_id: int):
         raise HTTPException(status_code=503, detail=str(exc))
     except SofaScoreError as exc:
         raise HTTPException(status_code=502, detail=f"SofaScore unavailable: {exc}")
-    return JSONResponse(analysis)
+    with _gemini_lock:
+        items = _gemini_store.setdefault(event_id, [])
+        if len(items) < _GEMINI_LIMIT:
+            items.append(analysis)
+    return _gemini_payload(event_id)
 
 
 # App served at the domain root (compubot.online is dedicated to it).

@@ -23,15 +23,15 @@ DC_RHO = -0.05  # Dixon-Coles correction strength.
 # Default over/under lines per market.
 GOAL_LINES = [0.5, 1.5, 2.5, 3.5, 4.5]
 HANDICAP_LINES = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5]
-TEAM_PROP_LINES = {
-    "corners": {"team": [3.5, 4.5, 5.5], "total": [8.5, 9.5, 10.5]},
-    "shots": {"team": [10.5, 12.5, 14.5], "total": [21.5, 24.5, 27.5]},
-    "shotsOnTarget": {"team": [3.5, 4.5, 5.5], "total": [6.5, 7.5, 8.5]},
-    "yellowCards": {"team": [1.5, 2.5], "total": [3.5, 4.5, 5.5]},
-    "fouls": {"team": [10.5, 12.5, 14.5], "total": [20.5, 23.5, 26.5]},
-}
 PLAYER_SHOT_LINES = [0.5, 1.5, 2.5]
 PLAYER_FOUL_LINES = [0.5, 1.5, 2.5]
+
+
+def _lines_around(mean: float) -> list[float]:
+    """Half-lines bracketing the expected value, e.g. mean 8.8 -> [7.5,8.5,9.5,10.5]."""
+    base = round(mean)
+    cand = [base - 1.5, base - 0.5, base + 0.5, base + 1.5]
+    return [x for x in cand if x >= 0.5]
 
 STAT_LABELS = {
     "corners": "Corners",
@@ -261,7 +261,6 @@ def _scaled(dist: CountDist, factor: float) -> CountDist:
 def _team_props(home: dict, away: dict, ref_factor: float = 1.0) -> dict:
     out = {}
     for key in STAT_LABELS:
-        lines = TEAM_PROP_LINES[key]
         home_dist = _prop_dist(home["statFor"][key], away["statAgainst"][key])
         away_dist = _prop_dist(away["statFor"][key], home["statAgainst"][key])
         if home_dist is None and away_dist is None:
@@ -271,12 +270,15 @@ def _team_props(home: dict, away: dict, ref_factor: float = 1.0) -> dict:
             home_dist = _scaled(home_dist, ref_factor) if home_dist else None
             away_dist = _scaled(away_dist, ref_factor) if away_dist else None
         entry = {"label": STAT_LABELS[key]}
+        # Lines bracket each scope's own expected value.
         if home_dist:
             entry["home"] = {"expected": round(home_dist.mean, 2),
-                             "lines": _ou_block(home_dist, lines["team"]), "mostLikely": home_dist.top(3)}
+                             "lines": _ou_block(home_dist, _lines_around(home_dist.mean)),
+                             "mostLikely": home_dist.top(3)}
         if away_dist:
             entry["away"] = {"expected": round(away_dist.mean, 2),
-                             "lines": _ou_block(away_dist, lines["team"]), "mostLikely": away_dist.top(3)}
+                             "lines": _ou_block(away_dist, _lines_around(away_dist.mean)),
+                             "mostLikely": away_dist.top(3)}
         if home_dist and away_dist:
             total_mean = home_dist.mean + away_dist.mean
             total_var = None
@@ -284,7 +286,8 @@ def _team_props(home: dict, away: dict, ref_factor: float = 1.0) -> dict:
                 total_var = home_dist.var + away_dist.var
             total_dist = CountDist(total_mean, total_var)
             entry["total"] = {"expected": round(total_mean, 2),
-                              "lines": _ou_block(total_dist, lines["total"]), "mostLikely": total_dist.top(3)}
+                              "lines": _ou_block(total_dist, _lines_around(total_mean)),
+                              "mostLikely": total_dist.top(3)}
         out[key] = entry
     return out
 
@@ -365,11 +368,53 @@ def _player_props(dataset: dict, ref_factor: float = 1.0) -> dict:
 # --------------------------------------------------------------------------
 # entrypoint
 # --------------------------------------------------------------------------
+def _nearest_line(lines: dict, value: float) -> str:
+    return min(lines.keys(), key=lambda k: abs(float(k) - value))
+
+
+def _favored(line_obj: dict) -> tuple[str, float]:
+    if line_obj["over"] >= line_obj["under"]:
+        return "Over", line_obj["over"]
+    return "Under", line_obj["under"]
+
+
+def _predictions(home_name: str, away_name: str, goals: dict, team_props: dict) -> list[dict]:
+    """The model's headline pick per market (shown before AND after the match)."""
+    preds = []
+    # match result
+    r = goals["result"]
+    pick = max(r, key=r.get)
+    label = {"home": home_name, "draw": "Empate", "away": away_name}[pick]
+    preds.append({"market": "Resultado (1X2)", "selection": label, "prob": r[pick]})
+    # total goals — line nearest the expected total
+    exp_total = goals["expectedGoals"]["total"]
+    gl = _nearest_line(goals["overUnder"], exp_total)
+    side, prob = _favored(goals["overUnder"][gl])
+    preds.append({"market": "Total de gols", "selection": f"{side} {gl}", "prob": prob, "expected": exp_total})
+    # BTTS
+    b = goals["btts"]
+    preds.append({"market": "Ambos marcam", "selection": "Sim" if b["yes"] >= b["no"] else "Não",
+                  "prob": max(b["yes"], b["no"])})
+    # team props — total + each side, favored line nearest the expected value
+    for p in team_props.values():
+        for scope, sfx in (("total", "Total"), ("home", home_name), ("away", away_name)):
+            sc = p.get(scope)
+            if not sc or not sc.get("lines"):
+                continue
+            line = _nearest_line(sc["lines"], sc["expected"])
+            side, prob = _favored(sc["lines"][line])
+            preds.append({"market": f"{p['label']} — {sfx}", "selection": f"{side} {line}",
+                          "prob": prob, "expected": sc["expected"]})
+    return preds
+
+
 def analyze(dataset: dict) -> dict:
     home, away = dataset["home"], dataset["away"]
     sample_n = min(home["matchesSampled"], away["matchesSampled"])
     confidence = "low" if sample_n < 3 else ("medium" if sample_n < 6 else "high")
     ref_factor = dataset.get("refereeFactor", 1.0)
+    goals = _goals_market(home, away)
+    team_props = _team_props(home, away, ref_factor)
     return {
         "event": dataset["event"],
         "lineupConfirmed": dataset.get("lineupConfirmed", False),
@@ -381,7 +426,9 @@ def analyze(dataset: dict) -> dict:
             "playerPropsProvisional": not dataset.get("lineupConfirmed", False),
             "refereeFactor": ref_factor,
         },
-        "goals": _goals_market(home, away),
-        "teamProps": _team_props(home, away, ref_factor),
+        "predictions": _predictions(dataset["event"]["home"]["name"],
+                                    dataset["event"]["away"]["name"], goals, team_props),
+        "goals": goals,
+        "teamProps": team_props,
         "playerProps": _player_props(dataset, ref_factor),
     }

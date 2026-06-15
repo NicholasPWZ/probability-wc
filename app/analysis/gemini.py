@@ -36,7 +36,7 @@ def analyze_with_gemini(dataset: dict, engine_output: dict) -> dict:
             system_instruction=prompt_mod.SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
             response_schema=prompt_mod.RESPONSE_SCHEMA,
-            temperature=0.4,
+            temperature=0.3,
         ),
     )
 

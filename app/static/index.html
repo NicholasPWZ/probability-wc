@@ -99,8 +99,19 @@
   .gemini { background:var(--panel); border:1px solid var(--accent); border-radius:9px; padding:12px 14px; margin-top:12px; }
   .gemini h3 { color:var(--accent); margin:0 0 8px; font-size:14px; }
   .gemini li { margin:4px 0; }
+  .gpanel { background:linear-gradient(180deg,rgba(176,125,255,.08),transparent); border:1px solid var(--accent3);
+            border-radius:11px; padding:13px 15px; margin-top:12px; box-shadow:var(--shadow); }
+  .gpanel h3 { color:var(--accent3); margin:0 0 9px; font-size:14px; }
+  .gpanel li { margin:4px 0; }
+  .gres { background:var(--panel); border:1px solid var(--border); border-left:3px solid var(--accent3);
+          border-radius:8px; padding:10px 12px; margin-bottom:10px; }
+  .gres .gh { font-size:11px; font-weight:700; color:var(--accent3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
   .ref { background:linear-gradient(90deg,rgba(240,180,41,.08),transparent); border:1px solid var(--border);
          border-left:3px solid var(--warn); border-radius:9px; padding:10px 14px; margin-top:10px; font-size:13px; }
+  .preds { background:linear-gradient(180deg,rgba(90,169,255,.07),transparent); border:1px solid var(--accent2);
+           border-radius:11px; padding:13px 15px; margin-top:12px; box-shadow:var(--shadow); }
+  .preds h3 { color:var(--accent2); margin:0 0 9px; font-size:14px; }
+  .preds td b { color:var(--text); }
   ::selection { background:rgba(90,169,255,.3); }
   .scroll::-webkit-scrollbar { height:8px; width:8px; }
   .scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:8px; }
@@ -126,12 +137,14 @@
   <h1>⚽ Bet Stats — Copa do Mundo 2026</h1>
   <div class="sub">Probabilidades calculadas. Horários no fuso de Brasília.</div>
   <nav>
-    <button id="nav-matches" class="active" onclick="showView('matches')">Jogos</button>
-    <button id="nav-dash" onclick="showView('dashboard')">📊 Desempenho do modelo</button>
+    <button id="nav-matches" class="active" onclick="showView('matches')">Próximos jogos</button>
+    <button id="nav-finished" onclick="showView('finished')">✅ Finalizados</button>
+    <button id="nav-dash" onclick="showView('dashboard')">📊 Desempenho</button>
   </nav>
 </header>
 <main>
   <div id="view-matches"><p class="muted"><span class="spin"></span> Carregando jogos…</p></div>
+  <div id="view-finished" style="display:none"></div>
   <div id="view-dashboard" style="display:none"></div>
 </main>
 
@@ -158,28 +171,50 @@ async function api(path, opts) {
 }
 
 function showView(v) {
-  document.getElementById("view-matches").style.display = v === "matches" ? "" : "none";
-  document.getElementById("view-dashboard").style.display = v === "dashboard" ? "" : "none";
+  for (const [id, name] of [["view-matches","matches"],["view-finished","finished"],["view-dashboard","dashboard"]])
+    document.getElementById(id).style.display = v === name ? "" : "none";
   document.getElementById("nav-matches").classList.toggle("active", v === "matches");
+  document.getElementById("nav-finished").classList.toggle("active", v === "finished");
   document.getElementById("nav-dash").classList.toggle("active", v === "dashboard");
   if (v === "dashboard") loadDashboard();
+  if (v === "finished") renderFinished();
 }
 
 // ---------- matches ----------
+let DAYS = [];
+let finishedRendered = false;
+
 async function boot() {
   try { GEMINI_ENABLED = (await api("/api/config")).geminiEnabled; } catch {}
   const root = document.getElementById("view-matches");
   try {
     const { days } = await api("/api/matches");
-    root.innerHTML = "";
-    if (!days.length) { root.innerHTML = '<p class="muted">Nenhum jogo encontrado.</p>'; return; }
-    for (const day of days) {
-      root.appendChild(el("div", "day", day.label));
-      for (const m of day.matches) root.appendChild(matchRow(m));
-    }
+    DAYS = days;
+    renderMatchList(root, m => m.statusType !== "finished",
+                    "Nenhum jogo futuro — veja a aba ✅ Finalizados.");
   } catch (e) {
     root.innerHTML = '<p class="err">Falha ao carregar jogos: ' + e.message + '</p>';
   }
+}
+
+function renderMatchList(root, filter, emptyMsg) {
+  root.innerHTML = "";
+  let any = false;
+  for (const day of DAYS) {
+    const ms = day.matches.filter(filter);
+    if (!ms.length) continue;
+    any = true;
+    root.appendChild(el("div", "day", day.label));
+    for (const m of ms) root.appendChild(matchRow(m));
+  }
+  if (!any) root.innerHTML = '<p class="muted">' + (emptyMsg || "Nada por aqui.") + '</p>';
+}
+
+function renderFinished() {
+  if (finishedRendered) return;
+  finishedRendered = true;
+  renderMatchList(document.getElementById("view-finished"),
+                  m => m.statusType === "finished", "Nenhum jogo finalizado ainda.");
 }
 
 function matchRow(m) {
@@ -234,11 +269,6 @@ function renderAnalysis(detail, id, data) {
   refreshBtn.disabled = confirmed;
   refreshBtn.onclick = () => doRefresh(detail, id, refreshBtn);
   bar.appendChild(refreshBtn);
-  if (GEMINI_ENABLED) {
-    const gb = el("button", "primary", "✨ Analisar com Gemini");
-    gb.onclick = () => doGemini(detail, id, gb);
-    bar.appendChild(gb);
-  }
   detail.appendChild(bar);
 
   // referee
@@ -250,6 +280,7 @@ function renderAnalysis(detail, id, data) {
     detail.appendChild(el("div", "ref", `🧑‍⚖️ <b>Árbitro:</b> ${info}`));
   }
 
+  if (data.predictions) detail.appendChild(renderPredictions(data.predictions));
   if (data.accuracy) detail.appendChild(renderAccuracy(data.accuracy));
 
   const g = data.goals, ml = g.mostLikely;
@@ -308,8 +339,7 @@ function renderAnalysis(detail, id, data) {
   detail.appendChild(playerSection(home, data.playerProps.home, actualsMap));
   detail.appendChild(playerSection(away, data.playerProps.away, actualsMap));
 
-  const gdiv = el("div", "gemini"); gdiv.id = "gemini-" + id; gdiv.style.display = "none";
-  detail.appendChild(gdiv);
+  detail.appendChild(renderGeminiPanel(id));
 }
 
 function ouTable(title, lines, handicap, home, away) {
@@ -368,6 +398,19 @@ function playerSection(teamName, players, actuals) {
   return d;
 }
 
+function renderPredictions(preds) {
+  const box = el("div", "preds");
+  box.appendChild(el("h3", null, "🎯 Previsões do modelo"));
+  const wrap = el("div", "scroll"); const t = el("table");
+  t.innerHTML = '<tr><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Esperado</th></tr>';
+  for (const p of preds)
+    t.innerHTML += `<tr><td>${p.market}</td><td><b>${p.selection}</b></td><td class="p">${pc(p.prob)}</td>`
+      + `<td class="p">${p.expected != null ? p.expected : "–"}</td></tr>`;
+  wrap.appendChild(t); box.appendChild(wrap);
+  box.appendChild(el("p", "muted", "Palpite = lado favorecido na linha mais próxima do valor esperado (Over/Under)."));
+  return box;
+}
+
 function renderAccuracy(a) {
   const card = el("div", "gemini");
   const s = a.summary;
@@ -405,24 +448,58 @@ async function doRefresh(detail, id, btn) {
   catch (e) { btn.disabled = false; btn.textContent = "↻ Atualizar escalação"; alert("Falha: " + e.message); }
 }
 
-async function doGemini(detail, id, btn) {
-  const box = document.getElementById("gemini-" + id);
-  box.style.display = "block";
-  box.innerHTML = '<p class="muted"><span class="spin"></span> Gemini analisando…</p>';
-  btn.disabled = true;
-  try {
-    const a = await api("/api/gemini/" + id, { method: "POST" });
-    let html = '<h3>✨ Análise do Gemini</h3><p>' + (a.summary || "") + '</p>';
-    if (a.keyFactors?.length) html += '<ul>' + a.keyFactors.map(k => '<li>' + k + '</li>').join('') + '</ul>';
-    if (a.topBets?.length) {
-      html += '<h3>Apostas sugeridas</h3><div class="scroll"><table><tr><th>Mercado</th><th>Seleção</th><th class="p">Conf.</th></tr>';
-      for (const b of a.topBets) html += `<tr><td>${b.market}</td><td>${b.selection}<div class="muted">${b.rationale}</div></td><td class="p">${b.confidence}</td></tr>`;
-      html += '</table></div>';
+function renderGeminiPanel(id) {
+  const box = el("div", "gpanel");
+  loadGemini(id, box);
+  return box;
+}
+
+async function loadGemini(id, box) {
+  box.innerHTML = '<h3>✨ Análise da IA (Gemini)</h3><p class="muted"><span class="spin"></span> carregando…</p>';
+  try { renderGeminiBox(id, box, await api("/api/gemini/" + id)); }
+  catch (e) { box.innerHTML = '<h3>✨ Análise da IA (Gemini)</h3><p class="err">' + e.message + '</p>'; }
+}
+
+function renderGeminiBox(id, box, info) {
+  box.innerHTML = "";
+  box.appendChild(el("h3", null, "✨ Análise da IA (Gemini)"));
+  if (!info.enabled)
+    box.appendChild(el("p", "muted", "IA desativada — configure GEMINI_API_KEY no servidor para habilitar."));
+  info.analyses.forEach((a, i) => box.appendChild(geminiResult(a, i + 1, info.limit)));
+
+  const btn = el("button", "primary");
+  if (info.remaining <= 0) { btn.textContent = `Limite de análises atingido (${info.used}/${info.limit})`; btn.disabled = true; }
+  else { btn.textContent = `✨ Pedir análise da IA (${info.used}/${info.limit})`; btn.disabled = !info.enabled; }
+  btn.onclick = () => runGemini(id, box, btn);
+  box.appendChild(btn);
+  box.appendChild(el("p", "muted", `Cada jogo permite até ${info.limit} análises da IA.`));
+}
+
+async function runGemini(id, box, btn) {
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> IA analisando… (10-30s)';
+  try { renderGeminiBox(id, box, await api("/api/gemini/" + id, { method: "POST" })); }
+  catch (e) {
+    btn.disabled = false; btn.textContent = "✨ Pedir análise da IA";
+    const err = el("p", "err", "Falha: " + e.message); box.appendChild(err);
+  }
+}
+
+function geminiResult(a, n, limit) {
+  const d = el("div", "gres");
+  let html = `<div class="gh">Análise ${n} de ${limit}</div><p>${a.summary || ""}</p>`;
+  if (a.keyFactors?.length) html += '<ul>' + a.keyFactors.map(k => '<li>' + k + '</li>').join('') + '</ul>';
+  if (a.topBets?.length) {
+    html += '<div class="scroll"><table><tr><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Conf.</th></tr>';
+    for (const b of a.topBets) {
+      const prob = b.modelProbability != null ? pc(b.modelProbability) : "–";
+      html += `<tr><td>${b.market}</td><td><b>${b.selection}</b><div class="muted">${b.rationale || ""}</div></td>`
+        + `<td class="p">${prob}</td><td class="p conf-${b.confidence}">${b.confidence || ""}</td></tr>`;
     }
-    if (a.cautions?.length) html += '<p class="muted">⚠ ' + a.cautions.join(" · ") + '</p>';
-    box.innerHTML = html;
-  } catch (e) { box.innerHTML = '<p class="err">Gemini indisponível: ' + e.message + '</p>'; }
-  finally { btn.disabled = false; }
+    html += '</table></div>';
+  }
+  if (a.cautions?.length) html += '<p class="muted">⚠ ' + a.cautions.join(" · ") + '</p>';
+  d.innerHTML = html;
+  return d;
 }
 
 // ---------- dashboard ----------

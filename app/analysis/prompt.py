@@ -1,51 +1,84 @@
-"""Build the Gemini prompt and response schema from the dataset + engine output."""
+"""Build the Gemini prompt and response schema from the dataset + engine output.
+
+The goal is a sharp, well-calibrated betting analyst that maximizes hit-rate by
+using the model's own probabilities as a prior and adjusting with the supplied
+form / matchup / referee context — never inventing data.
+"""
 from __future__ import annotations
 
 import json
 
 SYSTEM_INSTRUCTION = (
-    "You are a football betting analyst. You are given (1) aggregated recent-form "
-    "statistics for both teams in an upcoming match and (2) probabilities already "
-    "computed by a statistical model. Your job is to sanity-check and contextualize "
-    "those numbers using ONLY the data provided — never invent stats, injuries, or "
-    "news you were not given. Always reason about how each team's strengths interact "
-    "with the opponent's weaknesses. Be concise and concrete."
+    "You are an elite football betting analyst whose only objective is the highest "
+    "possible hit-rate on your selections. You are given, for one upcoming match: "
+    "(1) both teams' recent-form stats (goals, corners, shots, shots on target, "
+    "fouls, cards) for AND against, (2) the assigned referee's card tendency, and "
+    "(3) probabilities already computed by a calibrated statistical model, plus its "
+    "headline predictions.\n\n"
+    "Method:\n"
+    "- Treat the statistical model's probabilities as a strong PRIOR. Only deviate "
+    "when the form/matchup/referee context gives a concrete reason, and say why.\n"
+    "- Always reason about how one team's 'for' rate meets the opponent's 'against' "
+    "rate (e.g. a high-corner team vs a team that concedes many corners).\n"
+    "- Use ONLY the data provided. Never invent injuries, news, lineups, or stats. "
+    "If the sample is small or the lineup is provisional, lower your confidence.\n"
+    "- Prefer markets with a clear edge and solid data. Skip coin-flips.\n"
+    "- Output your STRONGEST 5-8 selections, each with YOUR probability (0-1, "
+    "calibrated — don't inflate), a confidence level, and a one-line data-grounded "
+    "rationale. Quote the relevant numbers."
 )
 
 
-def _form_summary(team: dict) -> dict:
-    def avg(xs):
-        xs = [x for x in xs if x is not None]
-        return round(sum(xs) / len(xs), 2) if xs else None
+def _avg(xs):
+    xs = [x for x in xs if x is not None]
+    return round(sum(xs) / len(xs), 2) if xs else None
 
+
+def _form_summary(team: dict) -> dict:
     return {
         "name": team["name"],
         "matchesSampled": team["matchesSampled"],
-        "goalsForAvg": avg(team["goalsFor"]),
-        "goalsAgainstAvg": avg(team["goalsAgainst"]),
-        "cornersForAvg": avg(team["statFor"]["corners"]),
-        "shotsForAvg": avg(team["statFor"]["shots"]),
-        "shotsOnTargetForAvg": avg(team["statFor"]["shotsOnTarget"]),
-        "yellowCardsForAvg": avg(team["statFor"]["yellowCards"]),
-        "foulsForAvg": avg(team["statFor"]["fouls"]),
+        "goalsFor": _avg(team["goalsFor"]),
+        "goalsAgainst": _avg(team["goalsAgainst"]),
+        "cornersFor": _avg(team["statFor"]["corners"]),
+        "cornersAgainst": _avg(team["statAgainst"]["corners"]),
+        "shotsFor": _avg(team["statFor"]["shots"]),
+        "shotsAgainst": _avg(team["statAgainst"]["shots"]),
+        "shotsOnTargetFor": _avg(team["statFor"]["shotsOnTarget"]),
+        "yellowCardsFor": _avg(team["statFor"]["yellowCards"]),
+        "foulsFor": _avg(team["statFor"]["fouls"]),
     }
 
 
 def build_contents(dataset: dict, engine_output: dict) -> str:
+    ref = dataset.get("referee") or {}
     payload = {
         "match": engine_output["event"],
         "lineupConfirmed": dataset.get("lineupConfirmed", False),
+        "referee": {
+            "name": ref.get("name"),
+            "avgYellowPerGame": ref.get("avgYellow"),
+            "leagueAvgYellow": ref.get("leagueAvg"),
+            "cardFactor": ref.get("factor"),
+        },
         "homeForm": _form_summary(dataset["home"]),
         "awayForm": _form_summary(dataset["away"]),
+        "modelPredictions": engine_output.get("predictions"),
         "modelProbabilities": {
-            "goals": engine_output["goals"],
-            "teamProps": engine_output["teamProps"],
+            "result": engine_output["goals"]["result"],
+            "expectedGoals": engine_output["goals"]["expectedGoals"],
+            "overUnderGoals": engine_output["goals"]["overUnder"],
+            "btts": engine_output["goals"]["btts"],
+            "teamProps": {k: {s: v.get(s, {}).get("expected")
+                              for s in ("home", "away", "total")}
+                          for k, v in engine_output["teamProps"].items()},
         },
+        "dataConfidence": engine_output["meta"]["confidence"],
     }
     return (
-        "Here is the data for the match. Review the model's probabilities, flag any that "
-        "look mispriced given the form, and give your best betting read.\n\n"
-        + json.dumps(payload, ensure_ascii=False, indent=2)
+        "Analyze this match and return your strongest, best-calibrated betting "
+        "selections. Cross-check the model's numbers against the form and flag any "
+        "you'd fade.\n\n" + json.dumps(payload, ensure_ascii=False, indent=2)
     )
 
 
@@ -55,28 +88,27 @@ RESPONSE_SCHEMA = {
     "properties": {
         "summary": {"type": "string", "description": "2-3 sentence overall read of the match."},
         "keyFactors": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Bullet points on how the teams' for/against profiles interact.",
+            "type": "array", "items": {"type": "string"},
+            "description": "How the teams' for/against profiles (and referee) interact.",
         },
         "topBets": {
             "type": "array",
+            "description": "Your 5-8 strongest selections, best first.",
             "items": {
                 "type": "object",
                 "properties": {
-                    "market": {"type": "string"},
-                    "selection": {"type": "string"},
-                    "modelProbability": {"type": "number"},
+                    "market": {"type": "string", "description": "e.g. 'Total corners', 'Match result', 'Player shots'"},
+                    "selection": {"type": "string", "description": "e.g. 'Under 9.5', 'Switzerland', 'Over 1.5'"},
+                    "modelProbability": {"type": "number", "description": "Your calibrated probability 0-1."},
                     "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
-                    "rationale": {"type": "string"},
+                    "rationale": {"type": "string", "description": "One line, cite the numbers."},
                 },
-                "required": ["market", "selection", "rationale", "confidence"],
+                "required": ["market", "selection", "modelProbability", "confidence", "rationale"],
             },
         },
         "cautions": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Data limitations or risks (small samples, unconfirmed lineup, etc.).",
+            "type": "array", "items": {"type": "string"},
+            "description": "Data limitations / risks (small sample, provisional lineup, etc.).",
         },
     },
     "required": ["summary", "keyFactors", "topBets"],
