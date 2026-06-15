@@ -612,22 +612,43 @@ function renderGeminiBox(id, box, info) {
   if (!info.enabled)
     box.appendChild(el("p", "muted", "IA desativada — configure GEMINI_API_KEY no servidor para habilitar."));
   info.analyses.forEach((a, i) => box.appendChild(geminiResult(a, i + 1, info.limit)));
+  if (info.final) box.appendChild(geminiFinal(info.final));
 
   const btn = el("button", "primary");
-  if (info.remaining <= 0) { btn.textContent = `Limite de análises atingido (${info.used}/${info.limit})`; btn.disabled = true; }
-  else { btn.innerHTML = ICON.spark + `<span>Pedir análise da IA (${info.used}/${info.limit})</span>`; btn.disabled = !info.enabled; }
+  if (!info.enabled) { btn.innerHTML = ICON.spark + "<span>Pedir análise da IA</span>"; btn.disabled = true; }
+  else if (info.canAnalyze) { btn.innerHTML = ICON.spark + `<span>Pedir análise da IA (${info.used}/${info.limit})</span>`; }
+  else if (info.canFinal) { btn.innerHTML = ICON.target + "<span>Gerar análise final (comparar as 2)</span>"; }
+  else { btn.textContent = "Análise final concluída"; btn.disabled = true; }
   btn.onclick = () => runGemini(id, box, btn);
   box.appendChild(btn);
-  box.appendChild(el("p", "muted", `Cada jogo permite até ${info.limit} análises da IA.`));
+  box.appendChild(el("p", "muted", "Até 2 análises independentes; depois uma análise final de consenso. As análises ficam salvas para todos."));
 }
 
 async function runGemini(id, box, btn) {
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> IA analisando… (10-30s)';
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> IA processando… (10-30s)';
   try { renderGeminiBox(id, box, await api("/api/gemini/" + id, { method: "POST" })); }
   catch (e) {
-    btn.disabled = false; btn.innerHTML = ICON.spark + "<span>Pedir análise da IA</span>";
+    btn.disabled = false; btn.innerHTML = ICON.spark + "<span>Tentar novamente</span>";
     const err = el("p", "err", "Falha: " + e.message); box.appendChild(err);
   }
+}
+
+function geminiFinal(f) {
+  const d = el("div", "gres");
+  d.style.borderLeft = "2px solid var(--accent)";
+  let html = `<div class="gh" style="color:var(--accent);display:flex;align-items:center;gap:6px">${ICON.check}<span>Análise final — consenso</span></div><p>${f.summary || ""}</p>`;
+  if (f.consensusBets?.length) {
+    html += '<div class="scroll"><table><tr><th>Mercado</th><th>Palpite (consenso)</th><th class="p">Conf.</th></tr>';
+    for (const b of f.consensusBets)
+      html += `<tr><td>${b.market}</td><td><b>${b.selection}</b><div class="muted">${b.rationale || ""}</div></td>`
+        + `<td class="p conf-${b.confidence}">${b.confidence || ""}</td></tr>`;
+    html += '</table></div>';
+  } else {
+    html += '<p class="muted">As duas análises não convergiram em nenhum palpite.</p>';
+  }
+  if (f.divergences?.length) html += '<p class="muted">Divergências: ' + f.divergences.join(" · ") + '</p>';
+  d.innerHTML = html;
+  return d;
 }
 
 function geminiResult(a, n, limit) {
@@ -643,7 +664,7 @@ function geminiResult(a, n, limit) {
     }
     html += '</table></div>';
   }
-  if (a.cautions?.length) html += '<p class="muted">⚠ ' + a.cautions.join(" · ") + '</p>';
+  if (a.cautions?.length) html += '<p class="muted">Riscos: ' + a.cautions.join(" · ") + '</p>';
   d.innerHTML = html;
   return d;
 }

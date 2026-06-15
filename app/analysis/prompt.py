@@ -134,3 +134,49 @@ RESPONSE_SCHEMA = {
     },
     "required": ["summary", "keyFactors", "topBets"],
 }
+
+
+# --- final consensus synthesis (compares two prior analyses) ---
+SYNTHESIS_SYSTEM = (
+    "You are given TWO independent AI betting analyses of the SAME match. Produce a "
+    "FINAL CONSENSUS. Keep ONLY the selections that BOTH analyses agree on — same "
+    "market and same side/direction (e.g. both say Under 2.5 goals, or both pick the "
+    "same team). For each consensus pick, merge their reasoning into one line and give "
+    "a consensus confidence (use the lower of the two if they differ). List notable "
+    "DIVERGENCES (where they disagree) separately, briefly. Be concise and use ONLY "
+    "what the two analyses contain — do not introduce new picks."
+)
+
+SYNTHESIS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string", "description": "2-3 sentence consensus read of the match."},
+        "consensusBets": {
+            "type": "array",
+            "description": "Only picks BOTH analyses agreed on.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "market": {"type": "string"},
+                    "selection": {"type": "string"},
+                    "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+                    "rationale": {"type": "string"},
+                },
+                "required": ["market", "selection", "confidence", "rationale"],
+            },
+        },
+        "divergences": {
+            "type": "array", "items": {"type": "string"},
+            "description": "Where the two analyses disagreed.",
+        },
+    },
+    "required": ["summary", "consensusBets"],
+}
+
+
+def build_synthesis_contents(a1: dict, a2: dict) -> str:
+    return (
+        "Two independent analyses of the same match follow. Produce the final consensus "
+        "(only picks both agree on).\n\nANALYSIS 1:\n" + json.dumps(a1, ensure_ascii=False)
+        + "\n\nANALYSIS 2:\n" + json.dumps(a2, ensure_ascii=False)
+    )

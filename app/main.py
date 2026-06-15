@@ -1,6 +1,8 @@
 """FastAPI application: World Cup match list + probability analysis."""
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -11,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.analysis import accuracy, engine
-from app.analysis.gemini import GeminiUnavailable, analyze_with_gemini
+from app.analysis.gemini import GeminiUnavailable, analyze_with_gemini, synthesize_with_gemini
 from app.config import get_settings
 from app.models import AnalyzeUrlRequest
 from app.scraper import endpoints, fixtures
@@ -353,51 +355,99 @@ async def api_best_bets():
         raise HTTPException(status_code=502, detail=f"Data source unavailable: {exc}")
 
 
-_GEMINI_LIMIT = 3
-_gemini_store: dict[int, list] = {}
+_GEMINI_LIMIT = 2  # two independent analyses, then a final consensus
 _gemini_lock = threading.Lock()
 
 
-def _gemini_payload(event_id: int, limit_reached: bool = False) -> dict:
+def _gemini_file() -> Path:
+    return Path(get_settings().cache_dir) / "gemini_store.json"
+
+
+def _gemini_load() -> dict:
+    fp = _gemini_file()
+    if fp.exists():
+        try:
+            return json.loads(fp.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _gemini_save(data: dict) -> None:
+    fp = _gemini_file()
+    fp.parent.mkdir(parents=True, exist_ok=True)
+    tmp = fp.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data), encoding="utf-8")
+    os.replace(tmp, fp)  # atomic; safe across gunicorn workers
+
+
+def _gemini_entry(data: dict, event_id: int) -> dict:
+    return data.get(str(event_id)) or {"analyses": [], "final": None}
+
+
+def _gemini_payload(event_id: int) -> dict:
     with _gemini_lock:
-        items = list(_gemini_store.get(event_id, []))
+        entry = _gemini_entry(_gemini_load(), event_id)
+    analyses = entry.get("analyses", [])
+    final = entry.get("final")
+    used = len(analyses)
     return {
         "enabled": get_settings().gemini_enabled,
         "limit": _GEMINI_LIMIT,
-        "used": len(items),
-        "remaining": max(0, _GEMINI_LIMIT - len(items)),
-        "limitReached": limit_reached or len(items) >= _GEMINI_LIMIT,
-        "analyses": items,
+        "used": used,
+        "analyses": analyses,
+        "final": final,
+        "canAnalyze": used < _GEMINI_LIMIT,
+        "canFinal": used >= _GEMINI_LIMIT and not final,
+        "done": used >= _GEMINI_LIMIT and bool(final),
     }
 
 
 @betstats.get("/api/gemini/{event_id}")
 async def api_gemini_list(event_id: int):
-    """Return the stored AI analyses for a match (without consuming one)."""
+    """Stored AI analyses + final consensus (server-persisted, shared by everyone)."""
     return _gemini_payload(event_id)
 
 
 @betstats.post("/api/gemini/{event_id}")
 async def api_gemini_run(event_id: int):
-    """Run one new AI analysis (max 3 per match) and return all stored ones."""
+    """Next AI step: a new analysis (up to 2), then a final consensus comparing both."""
     with _gemini_lock:
-        if len(_gemini_store.get(event_id, [])) >= _GEMINI_LIMIT:
-            return _gemini_payload(event_id, limit_reached=True)
+        entry = _gemini_entry(_gemini_load(), event_id)
+        used = len(entry.get("analyses", []))
+        final = entry.get("final")
+        if used < _GEMINI_LIMIT:
+            action = "analyze"
+        elif not final:
+            action, a1, a2 = "final", entry["analyses"][0], entry["analyses"][1]
+        else:
+            return _gemini_payload(event_id)  # nothing left to do
+
     try:
-        dataset = await run_in_threadpool(build_dataset, event_id)
-        engine_output = await run_in_threadpool(engine.analyze, dataset)
-        reliability = await run_in_threadpool(_market_reliability)
-        analysis = await run_in_threadpool(analyze_with_gemini, dataset, engine_output, reliability)
+        if action == "analyze":
+            dataset = await run_in_threadpool(build_dataset, event_id)
+            engine_output = await run_in_threadpool(engine.analyze, dataset)
+            reliability = await run_in_threadpool(_market_reliability)
+            result = await run_in_threadpool(analyze_with_gemini, dataset, engine_output, reliability)
+        else:
+            result = await run_in_threadpool(synthesize_with_gemini, a1, a2)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except GeminiUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except SofaScoreError as exc:
         raise HTTPException(status_code=502, detail=f"SofaScore unavailable: {exc}")
-    with _gemini_lock:
-        items = _gemini_store.setdefault(event_id, [])
-        if len(items) < _GEMINI_LIMIT:
-            items.append(analysis)
+
+    with _gemini_lock:  # re-read, mutate, persist atomically
+        data = _gemini_load()
+        entry = _gemini_entry(data, event_id)
+        if action == "analyze":
+            if len(entry["analyses"]) < _GEMINI_LIMIT:
+                entry["analyses"].append(result)
+        elif not entry.get("final"):
+            entry["final"] = result
+        data[str(event_id)] = entry
+        _gemini_save(data)
     return _gemini_payload(event_id)
 
 

@@ -45,3 +45,32 @@ def analyze_with_gemini(dataset: dict, engine_output: dict, reliability: dict | 
         return json.loads(text)
     except json.JSONDecodeError as exc:
         raise GeminiUnavailable(f"Gemini returned non-JSON output: {text[:200]}") from exc
+
+
+def synthesize_with_gemini(analysis1: dict, analysis2: dict) -> dict:
+    """Final consensus: compare two prior analyses, keep only what both agree on."""
+    settings = get_settings()
+    if not settings.gemini_enabled:
+        raise GeminiUnavailable("GEMINI_API_KEY is not configured.")
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError as exc:  # pragma: no cover
+        raise GeminiUnavailable("google-genai is not installed.") from exc
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    response = client.models.generate_content(
+        model=settings.gemini_model,
+        contents=prompt_mod.build_synthesis_contents(analysis1, analysis2),
+        config=types.GenerateContentConfig(
+            system_instruction=prompt_mod.SYNTHESIS_SYSTEM,
+            response_mime_type="application/json",
+            response_schema=prompt_mod.SYNTHESIS_SCHEMA,
+            temperature=0.2,
+        ),
+    )
+    text = (response.text or "").strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise GeminiUnavailable(f"Gemini returned non-JSON output: {text[:200]}") from exc
