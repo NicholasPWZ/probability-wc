@@ -220,6 +220,7 @@ async def api_reliability():
 _BESTBETS_TTL = 600           # 10 min
 _BESTBETS_WINDOW = 48 * 3600  # consider matches kicking off within 48h
 _BESTBETS_MAX_MATCHES = 16    # bound first-load latency
+_BESTBETS_MAX_PER_CATEGORY = 5  # cap per market so no category floods the board
 _REL_SHRINK_K = 20            # pulls small-sample hit-rates toward the baseline
 _REL_BASELINE = 0.5
 _bestbets_cache: dict = {"ts": 0.0, "data": None}
@@ -252,7 +253,6 @@ def _best_bets_sync() -> dict:
             a = _analyze_sync(m["id"])
         except Exception:
             continue
-        match_bets = []
         for p in a.get("predictions", []):
             entry = rel.get(p.get("category"))
             r = entry.get("rate") if entry else None
@@ -260,18 +260,30 @@ def _best_bets_sync() -> dict:
             # so proven markets dominate and weak ones (e.g. 1X2) sink.
             adj = _adjusted_reliability(entry)
             score = round(p["prob"] * adj * adj, 4)
-            match_bets.append({
+            bets.append({
                 "matchId": m["id"], "home": m["home"], "away": m["away"],
                 "time": m["time"], "date": m["date"], "startTimestamp": m.get("startTimestamp"),
                 "market": p["market"], "category": p.get("category"),
                 "selection": p["selection"], "prob": p["prob"],
                 "expected": p.get("expected"), "reliability": r, "score": score,
             })
-        match_bets.sort(key=lambda x: x["score"], reverse=True)
-        bets.extend(match_bets[:4])  # cap per match so one game can't flood the board
 
     bets.sort(key=lambda x: x["score"], reverse=True)
-    data = {"bets": bets[:40], "matchesConsidered": len(upcoming),
+    # Cap per category AND per match so the board stays varied (no single market or
+    # game floods it) -> guarantees several categories are represented.
+    final, cat_count, match_count = [], {}, {}
+    for b in bets:
+        c, mid = b["category"], b["matchId"]
+        if cat_count.get(c, 0) >= _BESTBETS_MAX_PER_CATEGORY:
+            continue
+        if match_count.get(mid, 0) >= 6:  # at most 6 picks from one match
+            continue
+        final.append(b)
+        cat_count[c] = cat_count.get(c, 0) + 1
+        match_count[mid] = match_count.get(mid, 0) + 1
+        if len(final) >= 40:
+            break
+    data = {"bets": final, "matchesConsidered": len(upcoming),
             "windowHours": _BESTBETS_WINDOW // 3600}
     _bestbets_cache.update(ts=now, data=data)
     return data
