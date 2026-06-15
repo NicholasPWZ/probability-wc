@@ -265,6 +265,9 @@ const BEST_SORTS = [["score", "⭐ Melhor"], ["time", "🕐 Horário"], ["rel", 
 function renderBestBets(root, d) { lastBestBets = d; drawBestBets(); }
 function setBestSort(mode) { bestSort = mode; drawBestBets(); }
 
+let bestTab = "market";
+function setBestTab(t) { bestTab = t; drawBestBets(); }
+
 function drawBestBets() {
   const root = document.getElementById("view-best");
   const d = lastBestBets;
@@ -273,27 +276,41 @@ function drawBestBets() {
   head.innerHTML = `<span class="pill">${d.matchesConsidered} jogos · próximas ${d.windowHours}h</span>`;
   const rb = el("button", "", "↻ Recalcular"); rb.onclick = () => loadBestBets(true);
   head.appendChild(rb);
-  head.appendChild(el("span", "muted", "ordenar:"));
-  for (const [k, lab] of BEST_SORTS) {
-    const sb = el("button", k === bestSort ? "primary" : "", lab);
-    sb.onclick = () => setBestSort(k);
-    head.appendChild(sb);
+  // sub-tabs: mercados vs jogadores
+  for (const [k, lab] of [["market", "📊 Mercados"], ["player", "👤 Jogadores"]]) {
+    const tb = el("button", k === bestTab ? "primary" : "", lab);
+    tb.onclick = () => setBestTab(k);
+    head.appendChild(tb);
   }
   root.appendChild(head);
 
-  if (!d.bets || !d.bets.length) { root.appendChild(el("p", "muted", "Nenhum jogo próximo na janela.")); return; }
-  root.appendChild(el("p", "muted", "⭐ Melhor prioriza mercados com alto acerto histórico (peso = confiab.², ajustada por amostra). Digite a odd da casa para ver se há VALOR."));
+  const sortbar = el("div", "toolbar");
+  sortbar.appendChild(el("span", "muted", "ordenar:"));
+  for (const [k, lab] of BEST_SORTS) {
+    const sb = el("button", k === bestSort ? "primary" : "", lab);
+    sb.onclick = () => setBestSort(k);
+    sortbar.appendChild(sb);
+  }
+  root.appendChild(sortbar);
 
-  const bets = [...d.bets];
-  if (bestSort === "time") bets.sort((a, b) => (a.startTimestamp || 0) - (b.startTimestamp || 0) || b.score - a.score);
-  else if (bestSort === "rel") bets.sort((a, b) => (b.reliability ?? -1) - (a.reliability ?? -1) || b.score - a.score);
-  else bets.sort((a, b) => b.score - a.score);
+  const isPlayer = bestTab === "player";
+  const list = [...(isPlayer ? (d.playerBets || []) : (d.bets || []))];
+  if (!list.length) { root.appendChild(el("p", "muted", "Nada na janela atual.")); return; }
+  root.appendChild(el("p", "muted", "Ranqueado por confiança × acerto histórico². Digite a odd da casa para ver se há VALOR."));
+
+  if (bestSort === "time") list.sort((a, b) => (a.startTimestamp || 0) - (b.startTimestamp || 0) || b.score - a.score);
+  else if (bestSort === "rel") list.sort((a, b) => (b.reliability ?? -1) - (a.reliability ?? -1) || b.score - a.score);
+  else list.sort((a, b) => b.score - a.score);
 
   const wrap = el("div", "scroll"); const t = el("table");
-  t.innerHTML = '<tr><th>Jogo</th><th class="p">Início</th><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Confiab.</th><th class="p">Odd → Valor</th></tr>';
-  for (const b of bets) {
+  const firstCol = isPlayer ? "Jogador" : "Jogo";
+  t.innerHTML = `<tr><th>${firstCol}</th><th class="p">Início</th><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Confiab.</th><th class="p">Odd → Valor</th></tr>`;
+  for (const b of list) {
     const rel = b.reliability != null ? pc(b.reliability) : '<span class="muted">–</span>';
-    t.innerHTML += `<tr><td>${b.home} <span class="muted">x</span> ${b.away}</td>`
+    const first = isPlayer
+      ? `<td>${b.player}<div class="muted">${b.home} x ${b.away}</div></td>`
+      : `<td>${b.home} <span class="muted">x</span> ${b.away}</td>`;
+    t.innerHTML += `<tr>${first}`
       + `<td class="p muted">${b.time || ""}</td>`
       + `<td>${b.market}</td><td><b>${b.selection}</b></td>`
       + `<td class="p">${pc(b.prob)}</td><td class="p">${rel}</td>`

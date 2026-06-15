@@ -256,44 +256,91 @@ def _best_bets_sync() -> dict:
     upcoming = upcoming[:_BESTBETS_MAX_MATCHES]
 
     rel = _market_reliability()["byMarket"]
-    bets = []
+
+    def scored(category, prob, base):
+        entry = rel.get(category)
+        adj = _adjusted_reliability(entry)
+        base["category"] = category
+        base["prob"] = prob
+        base["reliability"] = entry.get("rate") if entry else None
+        base["score"] = round(prob * adj * adj, 4)  # reliability-squared weighting
+        return base
+
+    def player_pick(prop):
+        # Over side only (the bettable "player to reach N+"). Pick the highest line
+        # the model still favors (>=50%); else the lowest line. Ranks by that prob,
+        # so low-volume players (e.g. keepers) sink instead of flooding with ~100% unders.
+        if not prop or not prop.get("lines"):
+            return None
+        lines = prop["lines"]
+        best = None
+        for k in sorted(lines, key=float):
+            if lines[k]["over"] >= 0.5:
+                best = k
+        if best is None:
+            best = min(lines, key=float)
+        return "+" + best, lines[best]["over"], prop.get("expected")
+
+    bets, player_bets = [], []
     for m in upcoming:
         try:
             a = _analyze_sync(m["id"])
         except Exception:
             continue
+        common = {"matchId": m["id"], "home": m["home"], "away": m["away"],
+                  "time": m["time"], "date": m["date"], "startTimestamp": m.get("startTimestamp")}
+        # market predictions
         for p in a.get("predictions", []):
-            entry = rel.get(p.get("category"))
-            r = entry.get("rate") if entry else None
-            # Aggressive cross-reference: weight by reliability SQUARED (sample-adjusted),
-            # so proven markets dominate and weak ones (e.g. 1X2) sink.
-            adj = _adjusted_reliability(entry)
-            score = round(p["prob"] * adj * adj, 4)
-            bets.append({
-                "matchId": m["id"], "home": m["home"], "away": m["away"],
-                "time": m["time"], "date": m["date"], "startTimestamp": m.get("startTimestamp"),
-                "market": p["market"], "category": p.get("category"),
-                "selection": p["selection"], "prob": p["prob"],
-                "expected": p.get("expected"), "reliability": r, "score": score,
-            })
+            bets.append(scored(p.get("category"), p["prob"], {
+                **common, "market": p["market"], "selection": p["selection"],
+                "expected": p.get("expected")}))
+        # player predictions (shots / fouls / cards)
+        pp = a.get("playerProps", {})
+        for side, team in (("home", m["home"]), ("away", m["away"])):
+            for pl in pp.get(side, []):
+                if not pl.get("appearances"):
+                    continue
+                base = {**common, "playerId": pl["playerId"], "player": pl["name"], "team": team}
+                sp = player_pick(pl.get("shots"))
+                if sp:
+                    player_bets.append(scored("Chutes (jogador)", sp[1], {
+                        **base, "market": "Chutes", "selection": sp[0] + " chutes", "expected": sp[2]}))
+                fp = player_pick(pl.get("fouls"))
+                if fp:
+                    player_bets.append(scored("Faltas (jogador)", fp[1], {
+                        **base, "market": "Faltas", "selection": fp[0] + " faltas", "expected": fp[2]}))
+                card = pl.get("card") or {}
+                pa = card.get("probAtLeastOne")
+                # Only the bettable side ("player to be carded"); ranked by that
+                # likelihood so "won't be carded 100%" picks don't flood the board.
+                if pa is not None and pa > 0:
+                    player_bets.append(scored("Cartões (jogador)", pa, {
+                        **base, "market": "Cartão", "selection": "Recebe cartão", "expected": None}))
 
-    bets.sort(key=lambda x: x["score"], reverse=True)
-    # Cap per category AND per match so the board stays varied (no single market or
-    # game floods it) -> guarantees several categories are represented.
-    final, cat_count, match_count = [], {}, {}
-    for b in bets:
-        c, mid = b["category"], b["matchId"]
-        if cat_count.get(c, 0) >= _BESTBETS_MAX_PER_CATEGORY:
-            continue
-        if match_count.get(mid, 0) >= 6:  # at most 6 picks from one match
-            continue
-        final.append(b)
-        cat_count[c] = cat_count.get(c, 0) + 1
-        match_count[mid] = match_count.get(mid, 0) + 1
-        if len(final) >= 40:
-            break
-    data = {"bets": final, "matchesConsidered": len(upcoming),
-            "windowHours": _BESTBETS_WINDOW // 3600}
+    def cap(items, per_cat, per_match, per_player=None, total=40):
+        items = sorted(items, key=lambda x: x["score"], reverse=True)
+        out, cc, mc, pcnt = [], {}, {}, {}
+        for b in items:
+            c, mid, pid = b["category"], b["matchId"], b.get("playerId")
+            if cc.get(c, 0) >= per_cat or mc.get(mid, 0) >= per_match:
+                continue
+            if per_player and pid is not None and pcnt.get(pid, 0) >= per_player:
+                continue
+            out.append(b)
+            cc[c] = cc.get(c, 0) + 1
+            mc[mid] = mc.get(mid, 0) + 1
+            if pid is not None:
+                pcnt[pid] = pcnt.get(pid, 0) + 1
+            if len(out) >= total:
+                break
+        return out
+
+    data = {
+        "bets": cap(bets, _BESTBETS_MAX_PER_CATEGORY, 6),
+        "playerBets": cap(player_bets, 15, 8, per_player=2),
+        "matchesConsidered": len(upcoming),
+        "windowHours": _BESTBETS_WINDOW // 3600,
+    }
     _bestbets_cache.update(ts=now, data=data)
     return data
 
