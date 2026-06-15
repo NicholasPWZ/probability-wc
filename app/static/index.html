@@ -215,7 +215,6 @@ let finishedRendered = false;
 
 async function boot() {
   try { GEMINI_ENABLED = (await api("/api/config")).geminiEnabled; } catch {}
-  try { RELIABILITY = (await api("/api/reliability")).byMarket; } catch {}
   const root = document.getElementById("view-matches");
   try {
     const { days } = await api("/api/matches");
@@ -225,6 +224,9 @@ async function boot() {
   } catch (e) {
     root.innerHTML = '<p class="err">Falha ao carregar jogos: ' + e.message + '</p>';
   }
+  // Reliability is slow on a cold cache; fetch it in the BACKGROUND so it never
+  // blocks the match list. Badges fill in once it resolves.
+  api("/api/reliability").then(r => { RELIABILITY = r.byMarket; }).catch(() => {});
 }
 
 function renderMatchList(root, filter, emptyMsg) {

@@ -158,9 +158,18 @@ def _finished_accuracy() -> dict:
             "result_correct": result_correct, "brier_sum": brier_sum, "evaluated": evaluated}
 
 
+_reliability_cache: dict = {"ts": 0.0, "data": None}
+_RELIABILITY_TTL = 600
+
+
 def _market_reliability() -> dict:
+    now = time.time()
+    if _reliability_cache["data"] and (now - _reliability_cache["ts"]) < _RELIABILITY_TTL:
+        return _reliability_cache["data"]
     fa = _finished_accuracy()
-    return {"byMarket": fa["by_market"], "matchesEvaluated": fa["evaluated"]}
+    data = {"byMarket": fa["by_market"], "matchesEvaluated": fa["evaluated"]}
+    _reliability_cache.update(ts=now, data=data)
+    return data
 
 
 def _dashboard_sync() -> dict:
