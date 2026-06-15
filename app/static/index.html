@@ -51,6 +51,12 @@
   .match.open .chev { transform:rotate(90deg); color:var(--text); }
   .detail { display:none; padding:2px 15px 16px; border-top:1px solid var(--border); }
   .match.open .detail { display:block; }
+  .subtabs { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 12px; padding-bottom:10px; border-bottom:1px solid var(--border); }
+  .subtabs button { font-size:12.5px; padding:6px 11px; border-radius:7px; color:var(--muted); background:transparent; border-color:transparent; }
+  .subtabs button:hover:not(.active) { background:var(--panel2); color:var(--text); }
+  .subtabs button.active { background:rgba(91,140,255,.12); color:var(--accent2); border-color:rgba(91,140,255,.3); font-weight:600; }
+  .seclabel { margin:12px 0 5px; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-weight:650; }
+  .preds h3 + .seclabel { margin-top:2px; }
   .toolbar { display:flex; gap:7px; align-items:center; flex-wrap:wrap; padding:12px 0; }
   button { font:inherit; font-size:13px; border:1px solid var(--border); background:var(--panel2); color:var(--text);
            padding:7px 12px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
@@ -395,6 +401,58 @@ function mlBox(title, rows) {
 }
 const fmtVal = i => i.value, fmtLabel = i => i.label;
 
+const CATSHORT = {
+  "1X2": "resultado", "Gols O/U": "gols", "Ambos marcam": "BTTS", "Corners": "escanteios",
+  "Total shots": "finalizações", "Shots on target": "chutes no alvo", "Yellow cards": "cartões", "Fouls": "faltas",
+};
+const relRate = cat => { const r = RELIABILITY && RELIABILITY[cat]; return r && r.rate != null ? r.rate : 0.55; };
+
+function bestPerCategory(preds, minRel) {
+  const by = {};
+  for (const p of preds || []) {
+    if (p.prob == null) continue;
+    const rel = relRate(p.category);
+    if (minRel && (rel < minRel || p.prob < 0.5)) continue;
+    const s = p.prob * rel;
+    if (!by[p.category] || s > by[p.category]._s) by[p.category] = Object.assign({}, p, { _rel: rel, _s: s });
+  }
+  return Object.values(by);
+}
+
+function renderHighlights(data) {
+  const box = el("div", "preds");
+  box.appendChild(el("h3", null, ICON.star + "<span>Destaques do jogo</span>"));
+
+  // Top 3 single picks (distinct markets), by prob × reliability
+  const top = bestPerCategory(data.predictions).sort((a, b) => b._s - a._s).slice(0, 3);
+  if (top.length) {
+    box.appendChild(el("div", "seclabel", "Top 3 mais prováveis"));
+    const wrap = el("div", "scroll"); const t = el("table", "rwd");
+    t.innerHTML = '<tr class="hr"><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Confiab.</th></tr>';
+    for (const p of top)
+      t.innerHTML += `<tr><td class="t">${p.market}</td><td data-label="Palpite"><b>${p.selection}</b></td>`
+        + `<td class="p" data-label="Prob.">${pc(p.prob)}</td><td class="p" data-label="Confiab.">${relBadge(p.category)}</td></tr>`;
+    wrap.appendChild(t); box.appendChild(wrap);
+  }
+
+  // Combos: pairs of reliable picks from different markets
+  const reliable = bestPerCategory(data.predictions, 0.6).sort((a, b) => b._s - a._s);
+  const combos = [];
+  for (let i = 0; i < reliable.length; i++)
+    for (let j = i + 1; j < reliable.length; j++)
+      combos.push({ legs: [reliable[i], reliable[j]], prob: reliable[i].prob * reliable[j].prob });
+  combos.sort((a, b) => b.prob - a.prob);
+  if (combos.length) {
+    box.appendChild(el("div", "seclabel", "Combinadas sugeridas (alta confiabilidade)"));
+    for (const c of combos.slice(0, 3)) {
+      const legs = c.legs.map(l => `<b>${l.selection}</b> <span class="muted">${CATSHORT[l.category] || l.category}</span>`).join("  +  ");
+      box.appendChild(el("div", "ml", `${legs} &nbsp;→&nbsp; <b style="color:${pColor(c.prob)}">${pct(c.prob)}</b>`));
+    }
+    box.appendChild(el("p", "muted", "Probabilidade combinada estimada (assume independência entre os mercados)."));
+  }
+  return box;
+}
+
 function renderAnalysis(detail, id, data) {
   detail.innerHTML = "";
   const home = data.event.home.name, away = data.event.away.name;
@@ -410,22 +468,25 @@ function renderAnalysis(detail, id, data) {
   bar.appendChild(refreshBtn);
   detail.appendChild(bar);
 
-  // referee
+  // ---- build sections ----
+  const g = data.goals, ml = g.mostLikely;
+
+  // Resumo: referee + highlights + full predictions + accuracy
+  const sResumo = el("div", "sec");
   if (data.referee) {
     const r = data.referee;
     const info = r.known
       ? `${r.name} (${r.country || "?"}) — média ${r.avgYellow} cartões/jogo em ${r.matches} jogo(s); fator <b>${r.factor}×</b> (liga ${r.leagueAvg})`
       : `${r.name || "árbitro indefinido"} — sem histórico; fator cartões neutro (1×)`;
-    detail.appendChild(el("div", "ref", `${ICON.flag}<span><b>Árbitro:</b> ${info}</span>`));
+    sResumo.appendChild(el("div", "ref", `${ICON.flag}<span><b>Árbitro:</b> ${info}</span>`));
   }
+  sResumo.appendChild(renderHighlights(data));
+  if (data.predictions) sResumo.appendChild(renderPredictions(data.predictions));
+  if (data.accuracy) sResumo.appendChild(renderAccuracy(data.accuracy));
 
-  if (data.predictions) detail.appendChild(renderPredictions(data.predictions));
-  if (data.accuracy) detail.appendChild(renderAccuracy(data.accuracy));
-
-  const g = data.goals, ml = g.mostLikely;
-  const grid = el("div", "grid");
-
-  // result
+  // Gols & Resultado
+  const sGols = el("div", "sec");
+  const gGrid = el("div", "grid");
   const resCard = el("div", "card");
   resCard.appendChild(el("h3", null, "Resultado (1X2)"));
   const three = el("div", "three");
@@ -449,16 +510,17 @@ function renderAnalysis(detail, id, data) {
     ["Over/Under", ml.overUnder, fmtLabel],
     ["Placar", ml.score, fmtLabel],
   ]));
-  grid.appendChild(resCard);
-
-  // correct score + handicap
+  gGrid.appendChild(resCard);
   const csCard = el("div", "card");
   csCard.appendChild(el("h3", null, "Placar & handicap"));
   csCard.appendChild(probList(g.correctScore.map(c => [c.score, c.prob])));
   csCard.appendChild(ouTable("Handicap asiático (mando " + home + ")", null, g.asianHandicap, home, away));
-  grid.appendChild(csCard);
+  gGrid.appendChild(csCard);
+  sGols.appendChild(gGrid);
 
-  // team props
+  // Mercados de time
+  const sTeam = el("div", "sec");
+  const tGrid = el("div", "grid");
   for (const [key, p] of Object.entries(data.teamProps)) {
     const c = el("div", "card");
     c.appendChild(el("h3", null, p.label));
@@ -470,15 +532,39 @@ function renderAnalysis(detail, id, data) {
     if (p.home) rows.push([`${home}`, p.home.mostLikely, fmtVal]);
     if (p.away) rows.push([`${away}`, p.away.mostLikely, fmtVal]);
     c.appendChild(mlBox("Mais prováveis", rows));
-    grid.appendChild(c);
+    tGrid.appendChild(c);
   }
-  detail.appendChild(grid);
+  sTeam.appendChild(tGrid);
 
+  // Jogadores
+  const sPlayers = el("div", "sec");
   const actualsMap = data.accuracy ? data.accuracy.playersActual : null;
-  detail.appendChild(playerSection(home, data.playerProps.home, actualsMap));
-  detail.appendChild(playerSection(away, data.playerProps.away, actualsMap));
+  sPlayers.appendChild(playerSection(home, data.playerProps.home, actualsMap));
+  sPlayers.appendChild(playerSection(away, data.playerProps.away, actualsMap));
 
-  detail.appendChild(renderGeminiPanel(id));
+  // IA
+  const sIA = el("div", "sec");
+  sIA.appendChild(renderGeminiPanel(id));
+
+  // ---- sub-tabs ----
+  const sections = [["Resumo", sResumo], ["Gols & Resultado", sGols],
+                    ["Mercados", sTeam], ["Jogadores", sPlayers], ["IA", sIA]];
+  const tabbar = el("div", "subtabs");
+  const secWrap = el("div");
+  const btns = [];
+  sections.forEach(([label, div], idx) => {
+    div.style.display = idx === 0 ? "" : "none";
+    secWrap.appendChild(div);
+    const b = el("button", idx === 0 ? "active" : "", label);
+    b.onclick = () => {
+      sections.forEach(([, d], i) => d.style.display = i === idx ? "" : "none");
+      btns.forEach((bb, i) => bb.classList.toggle("active", i === idx));
+    };
+    btns.push(b);
+    tabbar.appendChild(b);
+  });
+  detail.appendChild(tabbar);
+  detail.appendChild(secWrap);
 }
 
 function ouTable(title, lines, handicap, home, away) {
