@@ -385,6 +385,12 @@ def _gemini_entry(data: dict, event_id: int) -> dict:
     return data.get(str(event_id)) or {"analyses": [], "final": None}
 
 
+def _now_str() -> str:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo(get_settings().display_tz)).strftime("%d/%m %H:%M")
+
+
 def _gemini_payload(event_id: int) -> dict:
     with _gemini_lock:
         entry = _gemini_entry(_gemini_load(), event_id)
@@ -438,6 +444,8 @@ async def api_gemini_run(event_id: int):
     except SofaScoreError as exc:
         raise HTTPException(status_code=502, detail=f"SofaScore unavailable: {exc}")
 
+    if isinstance(result, dict):
+        result["createdAt"] = _now_str()
     with _gemini_lock:  # re-read, mutate, persist atomically
         data = _gemini_load()
         entry = _gemini_entry(data, event_id)

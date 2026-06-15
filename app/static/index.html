@@ -636,7 +636,8 @@ async function runGemini(id, box, btn) {
 function geminiFinal(f) {
   const d = el("div", "gres");
   d.style.borderLeft = "2px solid var(--accent)";
-  let html = `<div class="gh" style="color:var(--accent);display:flex;align-items:center;gap:6px">${ICON.check}<span>Análise final — consenso</span></div><p>${f.summary || ""}</p>`;
+  const fwhen = f.createdAt ? ` · ${f.createdAt}` : "";
+  let html = `<div class="gh" style="color:var(--accent);display:flex;align-items:center;gap:6px">${ICON.check}<span>Análise final — consenso${fwhen}</span></div><p>${f.summary || ""}</p>`;
   if (f.consensusBets?.length) {
     html += '<div class="scroll"><table><tr><th>Mercado</th><th>Palpite (consenso)</th><th class="p">Conf.</th></tr>';
     for (const b of f.consensusBets)
@@ -653,7 +654,8 @@ function geminiFinal(f) {
 
 function geminiResult(a, n, limit) {
   const d = el("div", "gres");
-  let html = `<div class="gh">Análise ${n} de ${limit}</div><p>${a.summary || ""}</p>`;
+  const when = a.createdAt ? ` · ${a.createdAt}` : "";
+  let html = `<div class="gh">Análise ${n} de ${limit}${when}</div><p>${a.summary || ""}</p>`;
   if (a.keyFactors?.length) html += '<ul>' + a.keyFactors.map(k => '<li>' + k + '</li>').join('') + '</ul>';
   if (a.topBets?.length) {
     html += '<div class="scroll"><table><tr><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Conf.</th></tr>';
