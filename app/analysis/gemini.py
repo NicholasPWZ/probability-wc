@@ -15,7 +15,7 @@ class GeminiUnavailable(RuntimeError):
     pass
 
 
-def analyze_with_gemini(dataset: dict, engine_output: dict) -> dict:
+def analyze_with_gemini(dataset: dict, engine_output: dict, reliability: dict | None = None) -> dict:
     settings = get_settings()
     if not settings.gemini_enabled:
         raise GeminiUnavailable("GEMINI_API_KEY is not configured.")
@@ -27,7 +27,7 @@ def analyze_with_gemini(dataset: dict, engine_output: dict) -> dict:
         raise GeminiUnavailable("google-genai is not installed.") from exc
 
     client = genai.Client(api_key=settings.gemini_api_key)
-    contents = prompt_mod.build_contents(dataset, engine_output)
+    contents = prompt_mod.build_contents(dataset, engine_output, reliability)
 
     response = client.models.generate_content(
         model=settings.gemini_model,

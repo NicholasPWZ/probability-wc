@@ -305,7 +305,8 @@ async def api_gemini_run(event_id: int):
     try:
         dataset = await run_in_threadpool(build_dataset, event_id)
         engine_output = await run_in_threadpool(engine.analyze, dataset)
-        analysis = await run_in_threadpool(analyze_with_gemini, dataset, engine_output)
+        reliability = await run_in_threadpool(_market_reliability)
+        analysis = await run_in_threadpool(analyze_with_gemini, dataset, engine_output, reliability)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except GeminiUnavailable as exc:
