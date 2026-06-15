@@ -112,6 +112,11 @@
            border-radius:11px; padding:13px 15px; margin-top:12px; box-shadow:var(--shadow); }
   .preds h3 { color:var(--accent2); margin:0 0 9px; font-size:14px; }
   .preds td b { color:var(--text); }
+  .oddin { width:56px; padding:4px 7px; border:1px solid var(--border); background:var(--bg); color:var(--text);
+           border-radius:6px; font:inherit; font-size:12px; }
+  .oddin:focus { outline:none; border-color:var(--accent2); }
+  .oddcell { white-space:nowrap; }
+  .valout { margin-left:7px; font-size:12px; }
   ::selection { background:rgba(90,169,255,.3); }
   .scroll::-webkit-scrollbar { height:8px; width:8px; }
   .scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:8px; }
@@ -137,12 +142,14 @@
   <h1>⚽ Bet Stats — Copa do Mundo 2026</h1>
   <div class="sub">Probabilidades calculadas. Horários no fuso de Brasília.</div>
   <nav>
+    <button id="nav-best" onclick="showView('best')">🔥 Melhores palpites</button>
     <button id="nav-matches" class="active" onclick="showView('matches')">Próximos jogos</button>
     <button id="nav-finished" onclick="showView('finished')">✅ Finalizados</button>
     <button id="nav-dash" onclick="showView('dashboard')">📊 Desempenho</button>
   </nav>
 </header>
 <main>
+  <div id="view-best" style="display:none"></div>
   <div id="view-matches"><p class="muted"><span class="spin"></span> Carregando jogos…</p></div>
   <div id="view-finished" style="display:none"></div>
   <div id="view-dashboard" style="display:none"></div>
@@ -171,14 +178,36 @@ async function api(path, opts) {
 }
 
 function showView(v) {
-  for (const [id, name] of [["view-matches","matches"],["view-finished","finished"],["view-dashboard","dashboard"]])
+  for (const [id, name] of [["view-best","best"],["view-matches","matches"],["view-finished","finished"],["view-dashboard","dashboard"]])
     document.getElementById(id).style.display = v === name ? "" : "none";
-  document.getElementById("nav-matches").classList.toggle("active", v === "matches");
-  document.getElementById("nav-finished").classList.toggle("active", v === "finished");
-  document.getElementById("nav-dash").classList.toggle("active", v === "dashboard");
+  for (const [id, name] of [["nav-best","best"],["nav-matches","matches"],["nav-finished","finished"],["nav-dash","dashboard"]])
+    document.getElementById(id).classList.toggle("active", v === name);
   if (v === "dashboard") loadDashboard();
   if (v === "finished") renderFinished();
+  if (v === "best") loadBestBets();
 }
+
+// value/EV: any odds input recomputes its result cell (event delegation)
+document.addEventListener("input", e => {
+  if (!e.target.classList || !e.target.classList.contains("oddin")) return;
+  const prob = parseFloat(e.target.dataset.prob);
+  const out = e.target.nextElementSibling;
+  const odd = parseFloat((e.target.value || "").replace(",", "."));
+  if (!odd || odd <= 1 || isNaN(prob)) { out.innerHTML = ""; return; }
+  const implied = 1 / odd, edge = prob - implied, ev = prob * (odd - 1) - (1 - prob);
+  if (edge > 0)
+    out.innerHTML = `<b style="color:var(--accent)">VALOR +${(edge*100).toFixed(1)}%</b> <span class="muted">EV ${ev>=0?"+":""}${ev.toFixed(2)}</span>`;
+  else
+    out.innerHTML = `<span class="muted">sem valor (${(edge*100).toFixed(1)}%)</span>`;
+});
+
+let RELIABILITY = null;
+function relBadge(cat) {
+  const r = RELIABILITY && RELIABILITY[cat];
+  if (!r || r.rate == null) return '<span class="muted">–</span>';
+  return `<span title="${r.hits}/${r.total} acertos em jogos passados">${pc(r.rate)}</span>`;
+}
+const oddInput = prob => `<input class="oddin" data-prob="${prob}" placeholder="odd" inputmode="decimal"><span class="valout"></span>`;
 
 // ---------- matches ----------
 let DAYS = [];
@@ -186,6 +215,7 @@ let finishedRendered = false;
 
 async function boot() {
   try { GEMINI_ENABLED = (await api("/api/config")).geminiEnabled; } catch {}
+  try { RELIABILITY = (await api("/api/reliability")).byMarket; } catch {}
   const root = document.getElementById("view-matches");
   try {
     const { days } = await api("/api/matches");
@@ -215,6 +245,36 @@ function renderFinished() {
   finishedRendered = true;
   renderMatchList(document.getElementById("view-finished"),
                   m => m.statusType === "finished", "Nenhum jogo finalizado ainda.");
+}
+
+// ---------- best bets board ----------
+let bestLoaded = false;
+async function loadBestBets(force) {
+  const root = document.getElementById("view-best");
+  if (bestLoaded && !force) return;
+  root.innerHTML = '<p class="muted"><span class="spin"></span> Calculando os melhores palpites dos próximos jogos… (pode demorar na 1ª vez)</p>';
+  try { renderBestBets(root, await api("/api/best-bets")); bestLoaded = true; }
+  catch (e) { root.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
+}
+
+function renderBestBets(root, d) {
+  root.innerHTML = "";
+  const head = el("div", "toolbar");
+  head.innerHTML = `<span class="pill">${d.matchesConsidered} jogos · próximas ${d.windowHours}h</span>`;
+  const rb = el("button", "", "↻ Recalcular"); rb.onclick = () => loadBestBets(true);
+  head.appendChild(rb); root.appendChild(head);
+  if (!d.bets || !d.bets.length) { root.appendChild(el("p", "muted", "Nenhum jogo próximo na janela.")); return; }
+  root.appendChild(el("p", "muted", "Ordenado por confiança × acerto histórico do mercado. Digite a odd da casa para ver se há VALOR."));
+  const wrap = el("div", "scroll"); const t = el("table");
+  t.innerHTML = '<tr><th>Jogo</th><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Confiab.</th><th class="p">Odd → Valor</th></tr>';
+  for (const b of d.bets) {
+    const rel = b.reliability != null ? pc(b.reliability) : '<span class="muted">–</span>';
+    t.innerHTML += `<tr><td>${b.home} <span class="muted">x</span> ${b.away}<div class="muted">${b.time || ""}</div></td>`
+      + `<td>${b.market}</td><td><b>${b.selection}</b></td>`
+      + `<td class="p">${pc(b.prob)}</td><td class="p">${rel}</td>`
+      + `<td class="oddcell">${oddInput(b.prob)}</td></tr>`;
+  }
+  wrap.appendChild(t); root.appendChild(wrap);
 }
 
 function matchRow(m) {
@@ -402,12 +462,13 @@ function renderPredictions(preds) {
   const box = el("div", "preds");
   box.appendChild(el("h3", null, "🎯 Previsões do modelo"));
   const wrap = el("div", "scroll"); const t = el("table");
-  t.innerHTML = '<tr><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Esperado</th></tr>';
+  t.innerHTML = '<tr><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p" title="Acerto histórico do modelo neste mercado">Confiab.</th><th class="p">Odd → Valor</th></tr>';
   for (const p of preds)
-    t.innerHTML += `<tr><td>${p.market}</td><td><b>${p.selection}</b></td><td class="p">${pc(p.prob)}</td>`
-      + `<td class="p">${p.expected != null ? p.expected : "–"}</td></tr>`;
+    t.innerHTML += `<tr><td>${p.market}</td><td><b>${p.selection}</b></td>`
+      + `<td class="p">${pc(p.prob)}</td><td class="p">${relBadge(p.category)}</td>`
+      + `<td class="oddcell">${oddInput(p.prob)}</td></tr>`;
   wrap.appendChild(t); box.appendChild(wrap);
-  box.appendChild(el("p", "muted", "Palpite = lado favorecido na linha mais próxima do valor esperado (Over/Under)."));
+  box.appendChild(el("p", "muted", "Confiab. = acerto histórico do modelo no mercado. Digite a odd da casa para ver se há VALOR (modelo > mercado)."));
   return box;
 }
 

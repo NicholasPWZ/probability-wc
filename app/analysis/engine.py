@@ -381,20 +381,21 @@ def _favored(line_obj: dict) -> tuple[str, float]:
 def _predictions(home_name: str, away_name: str, goals: dict, team_props: dict) -> list[dict]:
     """The model's headline pick per market (shown before AND after the match)."""
     preds = []
-    # match result
+    # match result  (category = dashboard byMarket key, for reliability lookup)
     r = goals["result"]
     pick = max(r, key=r.get)
     label = {"home": home_name, "draw": "Empate", "away": away_name}[pick]
-    preds.append({"market": "Resultado (1X2)", "selection": label, "prob": r[pick]})
+    preds.append({"market": "Resultado (1X2)", "category": "1X2", "selection": label, "prob": r[pick]})
     # total goals — line nearest the expected total
     exp_total = goals["expectedGoals"]["total"]
     gl = _nearest_line(goals["overUnder"], exp_total)
     side, prob = _favored(goals["overUnder"][gl])
-    preds.append({"market": "Total de gols", "selection": f"{side} {gl}", "prob": prob, "expected": exp_total})
+    preds.append({"market": "Total de gols", "category": "Gols O/U",
+                  "selection": f"{side} {gl}", "prob": prob, "expected": exp_total})
     # BTTS
     b = goals["btts"]
-    preds.append({"market": "Ambos marcam", "selection": "Sim" if b["yes"] >= b["no"] else "Não",
-                  "prob": max(b["yes"], b["no"])})
+    preds.append({"market": "Ambos marcam", "category": "Ambos marcam",
+                  "selection": "Sim" if b["yes"] >= b["no"] else "Não", "prob": max(b["yes"], b["no"])})
     # team props — total + each side, favored line nearest the expected value
     for p in team_props.values():
         for scope, sfx in (("total", "Total"), ("home", home_name), ("away", away_name)):
@@ -403,8 +404,8 @@ def _predictions(home_name: str, away_name: str, goals: dict, team_props: dict) 
                 continue
             line = _nearest_line(sc["lines"], sc["expected"])
             side, prob = _favored(sc["lines"][line])
-            preds.append({"market": f"{p['label']} — {sfx}", "selection": f"{side} {line}",
-                          "prob": prob, "expected": sc["expected"]})
+            preds.append({"market": f"{p['label']} — {sfx}", "category": p["label"],
+                          "selection": f"{side} {line}", "prob": prob, "expected": sc["expected"]})
     return preds
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -44,7 +45,9 @@ async def api_matches():
     return {"days": groups}
 
 
-_finished_cache: dict[int, dict] = {}
+_finished_cache: dict[int, dict] = {}        # finished matches: immutable -> cache forever
+_upcoming_cache: dict[int, tuple] = {}       # upcoming: (timestamp, result) with TTL
+_UPCOMING_TTL = 1800                         # 30 min
 _finished_lock = threading.Lock()
 
 
@@ -52,6 +55,10 @@ def _analyze_sync(event_id: int, force_lineups: bool = False) -> dict:
     if not force_lineups:
         with _finished_lock:
             cached = _finished_cache.get(event_id)
+            if cached is None:
+                up = _upcoming_cache.get(event_id)
+                if up and (time.time() - up[0]) < _UPCOMING_TTL:
+                    cached = up[1]
         if cached is not None:
             return cached
 
@@ -66,11 +73,13 @@ def _analyze_sync(event_id: int, force_lineups: bool = False) -> dict:
 
     dataset = build_dataset(event_id, force_lineups=force_lineups, before_ts=before_ts)
     result = engine.analyze(dataset)
-    if finished:
-        actuals = accuracy.extract_actuals(md)
-        result["accuracy"] = accuracy.evaluate(result, actuals)
-        with _finished_lock:  # finished matches are immutable -> cache forever
+    with _finished_lock:
+        if finished:
+            actuals = accuracy.extract_actuals(md)
+            result["accuracy"] = accuracy.evaluate(result, actuals)
             _finished_cache[event_id] = result
+        else:
+            _upcoming_cache[event_id] = (time.time(), result)
     return result
 
 
@@ -112,16 +121,13 @@ async def api_refresh(event_id: int):
 _CALIB_EDGES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0001]
 
 
-def _dashboard_sync() -> dict:
+def _finished_accuracy() -> dict:
+    """Aggregate accuracy across all finished matches (shared by dashboard + reliability)."""
     days = fixtures.list_world_cup_matches()
     finished = [m for d in days for m in d["matches"] if m["statusType"] == "finished"]
 
-    per_match = []
-    all_calls: list[dict] = []
-    result_correct = 0
-    brier_sum = 0.0
-    evaluated = 0
-
+    per_match, all_calls = [], []
+    result_correct, brier_sum, evaluated = 0, 0.0, 0
     for m in finished:
         try:
             a = _analyze_sync(m["id"]).get("accuracy")
@@ -140,7 +146,6 @@ def _dashboard_sync() -> dict:
             "resultCorrect": s["resultCorrect"], "marketHitRate": s["marketHitRate"],
         })
 
-    # by-market aggregation
     by_market: dict[str, dict] = {}
     for c in all_calls:
         b = by_market.setdefault(c["market"], {"hits": 0, "total": 0})
@@ -149,7 +154,19 @@ def _dashboard_sync() -> dict:
     for b in by_market.values():
         b["rate"] = round(b["hits"] / b["total"], 3) if b["total"] else None
 
-    # calibration buckets
+    return {"per_match": per_match, "all_calls": all_calls, "by_market": by_market,
+            "result_correct": result_correct, "brier_sum": brier_sum, "evaluated": evaluated}
+
+
+def _market_reliability() -> dict:
+    fa = _finished_accuracy()
+    return {"byMarket": fa["by_market"], "matchesEvaluated": fa["evaluated"]}
+
+
+def _dashboard_sync() -> dict:
+    fa = _finished_accuracy()
+    all_calls, evaluated = fa["all_calls"], fa["evaluated"]
+
     calibration = []
     for i in range(len(_CALIB_EDGES) - 1):
         lo, hi = _CALIB_EDGES[i], _CALIB_EDGES[i + 1]
@@ -168,17 +185,17 @@ def _dashboard_sync() -> dict:
     return {
         "matchesEvaluated": evaluated,
         "result": {
-            "correct": result_correct, "total": evaluated,
-            "accuracy": round(result_correct / evaluated, 3) if evaluated else None,
-            "avgBrier": round(brier_sum / evaluated, 4) if evaluated else None,
+            "correct": fa["result_correct"], "total": evaluated,
+            "accuracy": round(fa["result_correct"] / evaluated, 3) if evaluated else None,
+            "avgBrier": round(fa["brier_sum"] / evaluated, 4) if evaluated else None,
         },
         "markets": {
             "overall": {"hits": total_hits, "total": total_calls,
                         "rate": round(total_hits / total_calls, 3) if total_calls else None},
-            "byMarket": by_market,
+            "byMarket": fa["by_market"],
         },
         "calibration": calibration,
-        "perMatch": per_match,
+        "perMatch": fa["per_match"],
     }
 
 
@@ -186,6 +203,71 @@ def _dashboard_sync() -> dict:
 async def api_dashboard():
     try:
         return await run_in_threadpool(_dashboard_sync)
+    except SofaScoreError as exc:
+        raise HTTPException(status_code=502, detail=f"Data source unavailable: {exc}")
+
+
+@betstats.get("/api/reliability")
+async def api_reliability():
+    """Per-market historical hit-rate, for inline reliability badges."""
+    try:
+        return await run_in_threadpool(_market_reliability)
+    except SofaScoreError as exc:
+        raise HTTPException(status_code=502, detail=f"Data source unavailable: {exc}")
+
+
+# ---- best bets board ----
+_BESTBETS_TTL = 600           # 10 min
+_BESTBETS_WINDOW = 48 * 3600  # consider matches kicking off within 48h
+_BESTBETS_MAX_MATCHES = 16    # bound first-load latency
+_bestbets_cache: dict = {"ts": 0.0, "data": None}
+
+
+def _best_bets_sync() -> dict:
+    now = time.time()
+    if _bestbets_cache["data"] and (now - _bestbets_cache["ts"]) < _BESTBETS_TTL:
+        return _bestbets_cache["data"]
+
+    days = fixtures.list_world_cup_matches()
+    upcoming = [m for d in days for m in d["matches"]
+                if m["statusType"] in ("notstarted", "inprogress")
+                and m.get("startTimestamp")
+                and (now - 3 * 3600) <= m["startTimestamp"] <= (now + _BESTBETS_WINDOW)]
+    upcoming.sort(key=lambda m: m["startTimestamp"])
+    upcoming = upcoming[:_BESTBETS_MAX_MATCHES]
+
+    rel = _market_reliability()["byMarket"]
+    bets = []
+    for m in upcoming:
+        try:
+            a = _analyze_sync(m["id"])
+        except Exception:
+            continue
+        match_bets = []
+        for p in a.get("predictions", []):
+            r = rel.get(p.get("category"), {}).get("rate")
+            score = round(p["prob"] * (r if r is not None else 0.55), 4)
+            match_bets.append({
+                "matchId": m["id"], "home": m["home"], "away": m["away"],
+                "time": m["time"], "date": m["date"],
+                "market": p["market"], "category": p.get("category"),
+                "selection": p["selection"], "prob": p["prob"],
+                "expected": p.get("expected"), "reliability": r, "score": score,
+            })
+        match_bets.sort(key=lambda x: x["score"], reverse=True)
+        bets.extend(match_bets[:4])  # cap per match so one game can't flood the board
+
+    bets.sort(key=lambda x: x["score"], reverse=True)
+    data = {"bets": bets[:40], "matchesConsidered": len(upcoming),
+            "windowHours": _BESTBETS_WINDOW // 3600}
+    _bestbets_cache.update(ts=now, data=data)
+    return data
+
+
+@betstats.get("/api/best-bets")
+async def api_best_bets():
+    try:
+        return await run_in_threadpool(_best_bets_sync)
     except SofaScoreError as exc:
         raise HTTPException(status_code=502, detail=f"Data source unavailable: {exc}")
 
