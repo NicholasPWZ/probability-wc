@@ -348,9 +348,9 @@ def _best_bets_sync() -> dict:
                         **base, "market": "Faltas", "selection": fp[0] + " faltas", "expected": fp[2]}))
                 card = pl.get("card") or {}
                 pa = card.get("probAtLeastOne")
-                # Only the bettable side ("player to be carded"); ranked by that
-                # likelihood so "won't be carded 100%" picks don't flood the board.
-                if pa is not None and pa > 0:
+                # Only surface "recebe cartão" when there's a real card risk (>=30%),
+                # consistent with how the market is scored.
+                if pa is not None and pa >= 0.30:
                     player_bets.append(scored("Cartões (jogador)", pa, {
                         **base, "market": "Cartão", "selection": "Recebe cartão", "expected": None}))
 

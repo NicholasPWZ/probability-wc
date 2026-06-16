@@ -168,12 +168,14 @@ def evaluate(pred: dict, actuals: dict) -> dict:
                         player_hits += 1 if it["correct"] else 0
                         add_call("Faltas (jogador)", max(it["predOver"], 1 - it["predOver"]), it["correct"], it["modelSide"])
             card_prob = pp.get("card", {}).get("probAtLeastOne")
-            if card_prob is not None:
-                c = _side_correct(card_prob, act["yellow"] >= 1)
-                if c is not None:
-                    player_total += 1
-                    player_hits += 1 if c else 0
-                    add_call("Cartões (jogador)", max(card_prob, 1 - card_prob), c)
+            # Score only the bettable "recebe cartão" side, and only when the model
+            # flags a real card risk (>=30%). Otherwise the metric is dominated by the
+            # trivial (and almost always correct) "won't be carded" majority -> fake 90%.
+            if card_prob is not None and card_prob >= 0.30:
+                got = act["yellow"] >= 1
+                player_total += 1
+                player_hits += 1 if got else 0
+                add_call("Cartões (jogador)", card_prob, got, "yes")
 
     return {
         "result": result_eval,
