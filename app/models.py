@@ -6,3 +6,9 @@ from pydantic import BaseModel
 
 class AnalyzeUrlRequest(BaseModel):
     url: str
+
+
+class GeminiSettingsRequest(BaseModel):
+    token: str
+    apiKey: str | None = None
+    model: str | None = None

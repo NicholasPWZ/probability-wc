@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -15,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from app.analysis import accuracy, engine
 from app.analysis.gemini import GeminiUnavailable, analyze_with_gemini, synthesize_with_gemini
 from app.config import get_settings
-from app.models import AnalyzeUrlRequest
+from app.models import AnalyzeUrlRequest, GeminiSettingsRequest
 from app.scraper import endpoints, fixtures
 from app.scraper.aggregator import _epoch, build_dataset
 from app.scraper.client import SofaScoreError
@@ -35,7 +36,27 @@ async def index():
 
 @betstats.get("/api/config")
 async def api_config():
-    return {"geminiEnabled": get_settings().gemini_enabled}
+    from app import runtime
+    return {
+        "geminiEnabled": runtime.gemini_enabled(),
+        "geminiModel": runtime.gemini_model(),
+        "adminConfigured": bool(get_settings().admin_token.strip()),
+    }
+
+
+@betstats.post("/api/settings/gemini")
+async def api_set_gemini(req: GeminiSettingsRequest):
+    """Change the Gemini key/model from the UI. Guarded by ADMIN_TOKEN."""
+    from app import runtime
+    admin = get_settings().admin_token.strip()
+    if not admin:
+        raise HTTPException(status_code=403, detail="Edição pela UI desativada: defina ADMIN_TOKEN no servidor.")
+    if (req.token or "").strip() != admin:
+        raise HTTPException(status_code=401, detail="Token de admin inválido.")
+    if not (req.apiKey or "").strip() and not (req.model or "").strip():
+        raise HTTPException(status_code=400, detail="Informe a chave e/ou o modelo.")
+    runtime.set_gemini(api_key=req.apiKey, model=req.model)
+    return {"ok": True, "geminiEnabled": runtime.gemini_enabled(), "geminiModel": runtime.gemini_model()}
 
 
 @betstats.get("/api/matches")
@@ -432,8 +453,9 @@ def _gemini_payload(event_id: int) -> dict:
     analyses = entry.get("analyses", [])
     final = entry.get("final")
     used = len(analyses)
+    from app import runtime
     return {
-        "enabled": get_settings().gemini_enabled,
+        "enabled": runtime.gemini_enabled(),
         "limit": _GEMINI_LIMIT,
         "used": used,
         "analyses": analyses,
@@ -492,6 +514,109 @@ async def api_gemini_run(event_id: int):
         data[str(event_id)] = entry
         _gemini_save(data)
     return _gemini_payload(event_id)
+
+
+# ---- AI consensus performance (grade stored final/consensus bets vs results) ----
+def _grade_ai_bet(market: str, selection: str, actuals: dict, home: str, away: str) -> bool | None:
+    """Best-effort grading of a free-form AI consensus pick. None = couldn't grade."""
+    text = f"{market} {selection}".lower()
+    g = actuals["goals"]
+    ts = actuals["teamStats"]
+    hl, al = (home or "").lower(), (away or "").lower()
+    nmatch = re.search(r"(\d+(?:\.\d+)?)", selection or "") or re.search(r"(\d+(?:\.\d+)?)", market or "")
+    line = float(nmatch.group(1)) if nmatch else None
+    if any(w in text for w in ("under", "menos", "abaixo", "−", "-0.5", "-1.5")):
+        side = "under"
+    elif any(w in text for w in ("over", "mais", "acima", "+")):
+        side = "over"
+    else:
+        side = None
+
+    # both teams to score
+    if any(w in text for w in ("both teams", "ambos marcam", "btts", "both score")):
+        yes = "yes" in text or "sim" in text
+        no = "no" in text or "não" in text or "nao" in text
+        if yes and not no:
+            return g["btts"]
+        if no:
+            return not g["btts"]
+        return None
+    # draw
+    if "draw" in text or "empate" in text:
+        return g["result"] == "draw"
+    # team stat over/under (corners/cards/shots/SoT/fouls)
+    stat = None
+    if "corner" in text or "escanteio" in text:
+        stat = "corners"
+    elif "on target" in text or "no alvo" in text or "alvo" in text:
+        stat = "shotsOnTarget"
+    elif "shot" in text or "finaliz" in text or "chute" in text:
+        stat = "shots"
+    elif "card" in text or "cart" in text or "amarelo" in text:
+        stat = "yellowCards"
+    elif "foul" in text or "falta" in text:
+        stat = "fouls"
+    if stat and stat in ts and line is not None and side:
+        scope = "home" if (hl and hl in text) else ("away" if (al and al in text) else "total")
+        val = ts[stat].get(scope)
+        if val is None:
+            return None
+        return (val > line) if side == "over" else (val <= line)
+    # over/under goals (no stat keyword)
+    if side and line is not None:
+        return (g["total"] > line) if side == "over" else (g["total"] <= line)
+    # team to win (name mentioned, no over/under)
+    if hl and hl in text:
+        return g["result"] == "home"
+    if al and al in text:
+        return g["result"] == "away"
+    return None
+
+
+def _ai_performance() -> dict:
+    days = fixtures.list_world_cup_matches()
+    finished = [m for d in days for m in d["matches"] if m["statusType"] == "finished"]
+    store = _gemini_load()
+    tiers = {t: {"hits": 0, "total": 0} for t in ("high", "medium", "low")}
+    bets, matches_with = [], 0
+    for m in finished:
+        entry = store.get(str(m["id"])) or {}
+        final = entry.get("final")
+        if not final or not final.get("consensusBets"):
+            continue
+        try:
+            md = endpoints.match_details(m["id"])
+            actuals = accuracy.extract_actuals(md)
+        except Exception:
+            continue
+        graded_any = False
+        for b in final["consensusBets"]:
+            conf = (b.get("confidence") or "medium").lower()
+            if conf not in tiers:
+                conf = "medium"
+            correct = _grade_ai_bet(b.get("market", ""), b.get("selection", ""), actuals, m["home"], m["away"])
+            if correct is not None:
+                tiers[conf]["total"] += 1
+                tiers[conf]["hits"] += 1 if correct else 0
+                graded_any = True
+            bets.append({"match": f"{m['home']} x {m['away']}", "market": b.get("market"),
+                         "selection": b.get("selection"), "confidence": conf, "correct": correct})
+        if graded_any:
+            matches_with += 1
+    for t in tiers.values():
+        t["rate"] = round(t["hits"] / t["total"], 3) if t["total"] else None
+    oh = sum(t["hits"] for t in tiers.values())
+    ot = sum(t["total"] for t in tiers.values())
+    return {"tiers": tiers, "overall": {"hits": oh, "total": ot, "rate": round(oh / ot, 3) if ot else None},
+            "matchesWithConsensus": matches_with, "bets": bets}
+
+
+@betstats.get("/api/ai-performance")
+async def api_ai_performance():
+    try:
+        return await run_in_threadpool(_ai_performance)
+    except SofaScoreError as exc:
+        raise HTTPException(status_code=502, detail=f"Data source unavailable: {exc}")
 
 
 # App served at the domain root (compubot.online is dedicated to it).

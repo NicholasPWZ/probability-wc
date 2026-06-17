@@ -177,12 +177,58 @@ def evaluate(pred: dict, actuals: dict) -> dict:
                 player_hits += 1 if got else 0
                 add_call("Cartões (jogador)", card_prob, got, "yes")
 
+    # --- grade the model's ACTUAL headline predictions, so the review shows exactly
+    #     the same picks that were displayed pre-match (not re-picked lines). ---
+    ev = pred.get("event") or {}
+    home_name = (ev.get("home") or {}).get("name")
+    away_name = (ev.get("away") or {}).get("name")
+    label_to_key = {v: k for k, v in STAT_LABELS.items()}
+
+    def _grade(p):
+        cat, sel = p.get("category"), p.get("selection", "")
+        if cat == "1X2":
+            actual_name = {"home": home_name, "draw": "Empate", "away": away_name}.get(a_goals["result"])
+            return f"{result_eval['scoreStr']} ({actual_name})", sel == actual_name
+        if cat == "Gols O/U":
+            parts = sel.split()
+            side, line, tot = parts[0], float(parts[1]), a_goals["total"]
+            return f"{int(tot)} gols", (side == "Over") == (tot > line)
+        if cat == "Ambos marcam":
+            actual = "Sim" if a_goals["btts"] else "Não"
+            return actual, sel == actual
+        key = label_to_key.get(cat)
+        if key and key in actuals["teamStats"]:
+            mkt = p.get("market", "")
+            scope = "total" if mkt.endswith("Total") else ("home" if (home_name and home_name in mkt) else "away")
+            val = actuals["teamStats"][key].get(scope)
+            if val is None:
+                return None, None
+            parts = sel.split()
+            side, line = parts[0], float(parts[1])
+            return f"{val:g}", (side == "Over") == (val > line)
+        return None, None
+
+    prediction_results = []
+    pc_hits = pc_total = 0
+    for p in pred.get("predictions", []):
+        actual_str, correct = _grade(p)
+        if actual_str is None:
+            continue
+        if correct is not None:
+            pc_total += 1
+            pc_hits += 1 if correct else 0
+        prediction_results.append({
+            "market": p["market"], "selection": p["selection"], "prob": p.get("prob"),
+            "expected": p.get("expected"), "actual": actual_str, "correct": correct,
+        })
+
     return {
         "result": result_eval,
         "overUnderGoals": ou,
         "btts": btts_eval,
         "teamProps": team_props,
         "playersActual": players_actual,
+        "predictionResults": prediction_results,
         "calls": calls,
         "summary": {
             "resultCorrect": result_eval["correct"],
@@ -190,6 +236,9 @@ def evaluate(pred: dict, actuals: dict) -> dict:
             "marketLineHits": hits,
             "marketLineTotal": total,
             "marketHitRate": round(hits / total, 3) if total else None,
+            "predHits": pc_hits,
+            "predTotal": pc_total,
+            "predHitRate": round(pc_hits / pc_total, 3) if pc_total else None,
             "playerLineHits": player_hits,
             "playerLineTotal": player_total,
             "playerHitRate": round(player_hits / player_total, 3) if player_total else None,

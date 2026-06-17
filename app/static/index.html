@@ -30,6 +30,13 @@
   nav button { flex:0 0 auto; border-radius:8px; color:var(--muted); background:transparent; border-color:transparent; }
   nav button:hover:not(.active) { background:var(--panel2); color:var(--text); }
   nav button.active { background:rgba(91,140,255,.12); color:var(--accent2); border-color:rgba(91,140,255,.32); font-weight:600; }
+  .settings { background:var(--panel); border:1px solid var(--accent2); border-radius:var(--r); padding:14px 16px; margin-bottom:16px; }
+  .settings h3 { margin:0 0 6px; font-size:14px; color:var(--accent2); }
+  .settings label { display:block; font-size:12px; color:var(--muted); margin-top:10px; }
+  .settings input { display:block; width:100%; max-width:420px; margin-top:4px; padding:8px 10px; font:inherit; font-size:13px;
+                    background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:7px; }
+  .settings input:focus { outline:none; border-color:var(--accent2); }
+  .cfg-actions { display:flex; align-items:center; gap:12px; margin-top:14px; }
   main { max-width:1040px; margin:0 auto; padding:20px 16px 64px; }
   .day { margin:22px 0 10px; font-size:11px; color:var(--muted); font-weight:650; text-transform:uppercase;
          letter-spacing:.08em; display:flex; align-items:center; gap:12px; }
@@ -160,9 +167,18 @@
     <button id="nav-matches" class="active" onclick="showView('matches')"></button>
     <button id="nav-finished" onclick="showView('finished')"></button>
     <button id="nav-dash" onclick="showView('dashboard')"></button>
+    <button id="nav-cfg" onclick="toggleSettings()" title="Configurar IA" style="margin-left:auto"></button>
   </nav>
 </header>
 <main>
+  <div id="settings" class="settings" style="display:none">
+    <h3 id="cfg-h3"></h3>
+    <p id="cfg-status" class="muted"></p>
+    <label>Token de admin<input id="cfg-token" type="password" autocomplete="off"></label>
+    <label>Chave do Gemini (deixe vazio p/ manter)<input id="cfg-key" type="password" autocomplete="off"></label>
+    <label>Modelo<input id="cfg-model" type="text" placeholder="gemini-2.5-flash"></label>
+    <div class="cfg-actions"><button class="primary" onclick="saveGemini()">Salvar</button><span id="cfg-msg" class="muted"></span></div>
+  </div>
   <div id="view-best" style="display:none"></div>
   <div id="view-matches"><p class="muted"><span class="spin"></span> Carregando jogos…</p></div>
   <div id="view-finished" style="display:none"></div>
@@ -198,6 +214,7 @@ const ICON = {
 };
 ICON.spark = _svg('<path d="M12 3l1.8 5L19 9.8l-5.2 1.8L12 17l-1.8-5.4L5 9.8 10.2 8z"/>');
 ICON.copy = _svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5"/>');
+ICON.gear = _svg('<circle cx="12" cy="12" r="3.2"/><path d="M12 3.2v2M12 18.8v2M3.2 12h2M18.8 12h2M5.9 5.9l1.5 1.5M16.6 16.6l1.5 1.5M18.1 5.9l-1.5 1.5M7.4 16.6l-1.5 1.5"/>');
 
 // inject brand mark + nav icons (DOM is ready: script is at end of body)
 (function iconizeChrome() {
@@ -207,7 +224,44 @@ ICON.copy = _svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 1
   set("nav-matches", ICON.calendar, "Próximos jogos");
   set("nav-finished", ICON.check, "Finalizados");
   set("nav-dash", ICON.chart, "Desempenho");
+  const cfg = document.getElementById("nav-cfg"); if (cfg) cfg.innerHTML = ICON.gear + "<span>IA</span>";
 })();
+
+let CONFIG = {};
+function toggleSettings() {
+  const s = document.getElementById("settings");
+  const showing = s.style.display === "none";
+  s.style.display = showing ? "" : "none";
+  if (showing) {
+    document.getElementById("cfg-h3").textContent = "Configurar IA (Gemini)";
+    document.getElementById("cfg-model").value = CONFIG.geminiModel || "";
+    const st = document.getElementById("cfg-status");
+    const keyState = CONFIG.geminiEnabled ? "chave definida ✓" : "chave não definida";
+    st.innerHTML = CONFIG.adminConfigured
+      ? `Estado: ${keyState}. Informe o token de admin para alterar.`
+      : `Estado: ${keyState}. ⚠ Edição pela UI desativada — defina <b>ADMIN_TOKEN</b> no .env do servidor para habilitar.`;
+    document.getElementById("cfg-msg").textContent = "";
+  }
+}
+
+async function saveGemini() {
+  const msg = document.getElementById("cfg-msg");
+  msg.textContent = "Salvando…";
+  const body = {
+    token: document.getElementById("cfg-token").value,
+    apiKey: document.getElementById("cfg-key").value,
+    model: document.getElementById("cfg-model").value,
+  };
+  try {
+    const r = await api("/api/settings/gemini", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    CONFIG.geminiEnabled = r.geminiEnabled; CONFIG.geminiModel = r.geminiModel; GEMINI_ENABLED = r.geminiEnabled;
+    document.getElementById("cfg-key").value = "";
+    document.getElementById("cfg-token").value = "";
+    msg.innerHTML = '<span style="color:var(--accent)">Salvo ✓ (chave ' + (r.geminiEnabled ? "ativa" : "vazia") + ')</span>';
+  } catch (e) {
+    msg.innerHTML = '<span style="color:var(--bad)">' + e.message + '</span>';
+  }
+}
 // colored probability cell text
 const pc = p => p == null ? '<span class="muted">–</span>'
   : `<span style="color:${pColor(p)};font-weight:600">${(p * 100).toFixed(1)}%</span>`;
@@ -258,7 +312,7 @@ let DAYS = [];
 let finishedRendered = false;
 
 async function boot() {
-  try { GEMINI_ENABLED = (await api("/api/config")).geminiEnabled; } catch {}
+  try { CONFIG = await api("/api/config"); GEMINI_ENABLED = CONFIG.geminiEnabled; } catch {}
   const root = document.getElementById("view-matches");
   try {
     const { days } = await api("/api/matches");
@@ -673,31 +727,22 @@ function renderPredictions(preds) {
 function renderAccuracy(a) {
   const card = el("div", "gemini");
   const s = a.summary;
-  const mkt = s.marketHitRate == null ? '–' : pct(s.marketHitRate);
-  const plr = s.playerHitRate == null ? '–' : pct(s.playerHitRate);
+  const pred = s.predHitRate == null ? '–' : pct(s.predHitRate);
   let html = '<h3>' + ICON.check + '<span>Conferência de acertos — jogo finalizado</span></h3>';
   html += `<div class="three" style="margin-bottom:10px">
     <div><div class="v">${a.result.correct ? '✓' : '✗'}</div><div class="l">Resultado</div></div>
-    <div><div class="v">${mkt}</div><div class="l">Mercados (${s.marketLineHits}/${s.marketLineTotal})</div></div>
-    <div><div class="v">${plr}</div><div class="l">Jogadores (${s.playerLineHits}/${s.playerLineTotal})</div></div>
-    <div><div class="v">${s.brier}</div><div class="l">Brier</div></div></div>`;
-  const rows = [];
-  const r = a.result;
-  const totalGoals = r.scoreStr.split('-').reduce((x, y) => (+x) + (+y), 0);
-  rows.push(['Resultado', `${r.predicted} (${pct(r.predictedProb)})`, `${r.scoreStr} → ${r.actual}`, r.correct]);
-  for (const ou of a.overUnderGoals) rows.push([`Gols O/U ${ou.line}`, `${ou.modelSide} (${pct(ou.predOver)})`, `${totalGoals} gols`, ou.correct]);
-  rows.push(['Ambos marcam', `${a.btts.modelSide} (${pct(a.btts.predYes)})`, a.btts.actual ? 'Sim' : 'Não', a.btts.correct]);
-  for (const [, tp] of Object.entries(a.teamProps)) {
-    const tot = tp.scopes.total; if (!tot) continue;
-    const mid = tot.lines[Math.floor(tot.lines.length / 2)];
-    rows.push([tp.label + ' (total)', `${mid.modelSide} ${mid.line} (${pct(mid.predOver)})`, `${tot.actual} (prev. ${tot.expected})`, mid.correct]);
-  }
+    <div><div class="v">${pred}</div><div class="l">Palpites acertados (${s.predHits}/${s.predTotal})</div></div>
+    <div><div class="v">${s.brier}</div><div class="l">Brier (resultado)</div></div></div>`;
+  // Grade EXACTLY the model's predictions (same picks shown pre-match), not re-picked lines.
   const wrap = el("div", "scroll"); const t = el("table", "rwd");
-  t.innerHTML = '<tr class="hr"><th>Mercado</th><th>Previsão</th><th>Real</th><th class="p">Acerto</th></tr>';
-  for (const [m, pr, re, ok] of rows) t.innerHTML += `<tr><td class="t">${m}</td><td data-label="Previsão">${pr}</td><td data-label="Real">${re}</td><td class="p" data-label="Acerto">${chk(ok)}</td></tr>`;
+  t.innerHTML = '<tr class="hr"><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th>Real</th><th class="p">Acerto</th></tr>';
+  for (const pr of (a.predictionResults || []))
+    t.innerHTML += `<tr><td class="t">${pr.market}</td><td data-label="Palpite"><b>${pr.selection}</b></td>`
+      + `<td class="p" data-label="Prob.">${pc(pr.prob)}</td><td data-label="Real">${pr.actual}</td>`
+      + `<td class="p" data-label="Acerto">${chk(pr.correct)}</td></tr>`;
   wrap.appendChild(t);
   card.innerHTML = html; card.appendChild(wrap);
-  card.appendChild(el("p", "muted", "Previsões geradas só com jogos anteriores a esta partida (pré-jogo)."));
+  card.appendChild(el("p", "muted", "Confere exatamente os palpites mostrados em “Previsões do modelo” (gerados só com jogos anteriores)."));
   return card;
 }
 
@@ -832,8 +877,40 @@ async function loadDashboard(force) {
   const root = document.getElementById("view-dashboard");
   if (dashLoaded && !force) return;
   root.innerHTML = '<p class="muted"><span class="spin"></span> Avaliando todos os jogos finalizados… (pode demorar na 1ª vez)</p>';
-  try { renderDashboard(root, await api("/api/dashboard")); dashLoaded = true; }
-  catch (e) { root.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
+  try {
+    const [dash, ai] = await Promise.all([api("/api/dashboard"), api("/api/ai-performance").catch(() => null)]);
+    renderDashboard(root, dash);
+    if (ai) root.appendChild(renderAiPerformance(ai));
+    dashLoaded = true;
+  } catch (e) { root.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
+}
+
+function renderAiPerformance(ai) {
+  const card = el("div", "gpanel"); card.style.marginTop = "12px";
+  card.appendChild(el("h3", null, ICON.spark + "<span>Desempenho da IA (consenso)</span>"));
+  if (!ai.matchesWithConsensus) {
+    card.appendChild(el("p", "muted", "Nenhuma análise final de consenso gerada ainda. Gere a análise final da IA em jogos finalizados para alimentar este painel."));
+    return card;
+  }
+  const t = ai.tiers, o = ai.overall;
+  const three = el("div", "three"); three.style.margin = "0 0 12px";
+  three.innerHTML = `
+    <div><div class="v" style="color:${pColor((t.high||{}).rate)}">${pct((t.high||{}).rate)}</div><div class="l">Alta conf. (${(t.high||{}).hits||0}/${(t.high||{}).total||0})</div></div>
+    <div><div class="v" style="color:${pColor((t.medium||{}).rate)}">${pct((t.medium||{}).rate)}</div><div class="l">Média conf. (${(t.medium||{}).hits||0}/${(t.medium||{}).total||0})</div></div>
+    <div><div class="v" style="color:${pColor((t.low||{}).rate)}">${pct((t.low||{}).rate)}</div><div class="l">Baixa conf. (${(t.low||{}).hits||0}/${(t.low||{}).total||0})</div></div>
+    <div><div class="v" style="color:${pColor(o.rate)}">${pct(o.rate)}</div><div class="l">Geral (${o.hits}/${o.total})</div></div>`;
+  card.appendChild(three);
+  const order = { high: 0, medium: 1, low: 2 }, lab = { high: "Alta", medium: "Média", low: "Baixa" };
+  const bets = [...ai.bets].sort((a, b) => order[a.confidence] - order[b.confidence]);
+  const wrap = el("div", "scroll"); const tb = el("table", "rwd");
+  tb.innerHTML = '<tr class="hr"><th>Jogo</th><th>Mercado</th><th>Palpite</th><th class="p">Conf.</th><th class="p">Acerto</th></tr>';
+  for (const b of bets)
+    tb.innerHTML += `<tr><td class="t">${b.match}</td><td data-label="Mercado">${b.market || ""}</td>`
+      + `<td data-label="Palpite"><b>${b.selection || ""}</b></td><td class="p conf-${b.confidence}" data-label="Conf.">${lab[b.confidence]}</td>`
+      + `<td class="p" data-label="Acerto">${b.correct == null ? '<span class="muted">n/a</span>' : chk(b.correct)}</td></tr>`;
+  wrap.appendChild(tb); card.appendChild(wrap);
+  card.appendChild(el("p", "muted", "Confere os palpites de consenso da IA vs resultado. 'n/a' = palpite que não dá para verificar automaticamente."));
+  return card;
 }
 
 function dashTable(headHtml, rowsHtml) {

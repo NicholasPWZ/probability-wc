@@ -90,7 +90,7 @@ DISPERSION_FLOOR = 1.4   # football counts are overdispersed; floor tempers extr
 PROB_CAP = 0.93          # never claim more than this certainty (real "99%" picks miss ~12%)
 # Structural correction for stats the model systematically biases (tournament games
 # are more intense than mixed recent form). Measured via dashboard "Viés do modelo".
-STAT_CORRECTION = {"shots": 1.12}
+STAT_CORRECTION = {"shots": 1.12, "yellowCards": 0.80}  # WC runs cooler on cards than recent form
 
 
 class CountDist:
