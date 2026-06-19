@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from app.analysis import accuracy, engine
 from app.analysis.gemini import GeminiUnavailable, analyze_with_gemini, synthesize_with_gemini
 from app.config import get_settings
-from app.models import AnalyzeUrlRequest, GeminiSettingsRequest
+from app.models import AnalyzeUrlRequest, GeminiRunRequest, GeminiSettingsRequest
 from app.scraper import endpoints, fixtures
 from app.scraper.aggregator import _epoch, build_dataset
 from app.scraper.client import SofaScoreError
@@ -223,7 +223,11 @@ def _market_reliability() -> dict:
     if _reliability_cache["data"] and (now - _reliability_cache["ts"]) < _RELIABILITY_TTL:
         return _reliability_cache["data"]
     fa = _finished_accuracy()
-    data = {"byMarket": fa["by_market"], "matchesEvaluated": fa["evaluated"]}
+    # Widened additively: bias (predicted-vs-actual per stat) and over/under direction
+    # split feed the Gemini calibrationContext. /api/reliability + inline badges only
+    # read byMarket, so the extra keys are harmless to them.
+    data = {"byMarket": fa["by_market"], "matchesEvaluated": fa["evaluated"],
+            "bias": fa["bias"], "direction": fa["direction"]}
     _reliability_cache.update(ts=now, data=data)
     return data
 
@@ -437,8 +441,30 @@ def _gemini_save(data: dict) -> None:
     os.replace(tmp, fp)  # atomic; safe across gunicorn workers
 
 
+def _entry_sections(raw: dict | None) -> list[dict]:
+    """Normalize a stored entry into a list of sections.
+
+    A *section* is one round of {analyses: [...up to _GEMINI_LIMIT...], final: ...}.
+    Legacy entries stored a single {analyses, final} at the top level — migrate those
+    into a one-section list so old data keeps working.
+    """
+    if not raw:
+        return []
+    secs = raw.get("sections")
+    if secs is None:  # legacy single-round entry
+        return [{"analyses": raw.get("analyses", []), "final": raw.get("final")}]
+    return secs
+
+
 def _gemini_entry(data: dict, event_id: int) -> dict:
-    return data.get(str(event_id)) or {"analyses": [], "final": None}
+    secs = _entry_sections(data.get(str(event_id)))
+    if not secs:
+        secs = [{"analyses": [], "final": None}]
+    return {"sections": secs}
+
+
+def _section_done(section: dict) -> bool:
+    return len(section.get("analyses") or []) >= _GEMINI_LIMIT and bool(section.get("final"))
 
 
 def _now_str() -> str:
@@ -447,22 +473,32 @@ def _now_str() -> str:
     return datetime.now(ZoneInfo(get_settings().display_tz)).strftime("%d/%m %H:%M")
 
 
+def _section_state(section: dict) -> dict:
+    analyses = section.get("analyses") or []
+    final = section.get("final")
+    used = len(analyses)
+    return {
+        "analyses": analyses,
+        "final": final,
+        "used": used,
+        "canAnalyze": used < _GEMINI_LIMIT,
+        "canFinal": used >= _GEMINI_LIMIT and not final,
+        "done": used >= _GEMINI_LIMIT and bool(final),
+    }
+
+
 def _gemini_payload(event_id: int) -> dict:
     with _gemini_lock:
         entry = _gemini_entry(_gemini_load(), event_id)
-    analyses = entry.get("analyses", [])
-    final = entry.get("final")
-    used = len(analyses)
+    sections = [_section_state(s) for s in entry["sections"]]
     from app import runtime
     return {
         "enabled": runtime.gemini_enabled(),
         "limit": _GEMINI_LIMIT,
-        "used": used,
-        "analyses": analyses,
-        "final": final,
-        "canAnalyze": used < _GEMINI_LIMIT,
-        "canFinal": used >= _GEMINI_LIMIT and not final,
-        "done": used >= _GEMINI_LIMIT and bool(final),
+        "adminConfigured": bool(get_settings().admin_token.strip()),
+        "sections": sections,
+        # A new section can be added only once the current (last) one is complete.
+        "canAddSection": bool(sections) and sections[-1]["done"],
     }
 
 
@@ -473,18 +509,36 @@ async def api_gemini_list(event_id: int):
 
 
 @betstats.post("/api/gemini/{event_id}")
-async def api_gemini_run(event_id: int):
-    """Next AI step: a new analysis (up to 2), then a final consensus comparing both."""
+async def api_gemini_run(event_id: int, req: GeminiRunRequest | None = None):
+    """Progress the active AI section: a new analysis (up to 2), then a final
+    consensus. With ``action="new_section"`` (admin-gated) start a fresh round."""
+    if req and req.action == "new_section":
+        admin = get_settings().admin_token.strip()
+        if not admin:
+            raise HTTPException(status_code=403, detail="Nova seção desativada: defina ADMIN_TOKEN no servidor.")
+        if (req.token or "").strip() != admin:
+            raise HTTPException(status_code=401, detail="Token de admin inválido.")
+        with _gemini_lock:
+            data = _gemini_load()
+            entry = _gemini_entry(data, event_id)
+            if _section_done(entry["sections"][-1]):  # only extend a completed round
+                entry["sections"].append({"analyses": [], "final": None})
+                data[str(event_id)] = entry
+                _gemini_save(data)
+        return _gemini_payload(event_id)
+
     with _gemini_lock:
         entry = _gemini_entry(_gemini_load(), event_id)
-        used = len(entry.get("analyses", []))
-        final = entry.get("final")
+        section = entry["sections"][-1]  # active round is always the last one
+        analyses = section.get("analyses") or []
+        used = len(analyses)
+        final = section.get("final")
         if used < _GEMINI_LIMIT:
             action = "analyze"
         elif not final:
-            action, a1, a2 = "final", entry["analyses"][0], entry["analyses"][1]
+            action, a1, a2 = "final", analyses[0], analyses[1]
         else:
-            return _gemini_payload(event_id)  # nothing left to do
+            return _gemini_payload(event_id)  # nothing left to do in this section
 
     try:
         if action == "analyze":
@@ -506,20 +560,112 @@ async def api_gemini_run(event_id: int):
     with _gemini_lock:  # re-read, mutate, persist atomically
         data = _gemini_load()
         entry = _gemini_entry(data, event_id)
+        section = entry["sections"][-1]
         if action == "analyze":
-            if len(entry["analyses"]) < _GEMINI_LIMIT:
-                entry["analyses"].append(result)
-        elif not entry.get("final"):
-            entry["final"] = result
+            section.setdefault("analyses", [])
+            if len(section["analyses"]) < _GEMINI_LIMIT:
+                section["analyses"].append(result)
+        elif not section.get("final"):
+            section["final"] = result
         data[str(event_id)] = entry
         _gemini_save(data)
     return _gemini_payload(event_id)
 
 
-# ---- AI consensus performance (grade stored final/consensus bets vs results) ----
-def _grade_ai_bet(market: str, selection: str, actuals: dict, home: str, away: str) -> bool | None:
-    """Best-effort grading of a free-form AI consensus pick. None = couldn't grade."""
-    text = f"{market} {selection}".lower()
+# ---- AI performance (grade stored AI picks — individual analyses AND consensus) ----
+def _match_actual_player(text: str, actuals: dict) -> dict | None:
+    """Find the finished-match player whose name best matches a free-form pick."""
+    text_l = (text or "").lower()
+    if not text_l:
+        return None
+    best, best_len = None, 0
+    for p in (actuals.get("players") or {}).values():
+        name = (p.get("name") or "").strip().lower()
+        if not name:
+            continue
+        if name in text_l and len(name) > best_len:
+            best, best_len = p, len(name)
+            continue
+        for tok in name.replace(".", " ").split():
+            # surname-level match; require >=4 chars to avoid spurious hits
+            if len(tok) >= 4 and tok in text_l and len(tok) > best_len:
+                best, best_len = p, len(tok)
+    return best
+
+
+_AI_STAT_MAP = {"corners_ou": "corners", "cards_ou": "yellowCards", "shots_ou": "shots",
+                "sot_ou": "shotsOnTarget", "fouls_ou": "fouls"}
+_AI_DC_MAP = {"home_or_draw": ("home", "draw"), "away_or_draw": ("away", "draw"),
+              "home_or_away": ("home", "away")}
+
+
+def _resolve_player(bet: dict, actuals: dict) -> dict | None:
+    """Join an AI player pick to the finished-match player — by playerId, else by name."""
+    players = actuals.get("players") or {}
+    pid = bet.get("playerId")
+    if pid is not None:
+        try:
+            p = players.get(int(pid))
+        except (TypeError, ValueError):
+            p = None
+        if p:
+            return p
+    name = bet.get("playerName") or bet.get("player") or bet.get("selection") or ""
+    return _match_actual_player(f"{name} {bet.get('market', '')}", actuals)
+
+
+def _grade_structured(bet: dict, actuals: dict) -> bool | None:
+    """Grade a pick that carries the structured contract fields. None = ungradeable."""
+    mk = (bet.get("marketKey") or "").strip().lower()
+    side = (bet.get("side") or "").strip().lower()
+    scope = (bet.get("scope") or "total").strip().lower()
+    g, ts = actuals["goals"], actuals["teamStats"]
+    try:
+        line = float(bet["line"]) if bet.get("line") is not None else None
+    except (TypeError, ValueError):
+        line = None
+
+    def ou(val):
+        if val is None or line is None or side not in ("over", "under"):
+            return None
+        return (val > line) if side == "over" else (val <= line)
+
+    if mk == "goals_ou":
+        return ou(g["total"])
+    if mk == "btts":
+        return g["btts"] if side == "yes" else (not g["btts"] if side == "no" else None)
+    if mk == "result_1x2":
+        return g["result"] == side if side in ("home", "away", "draw") else None
+    if mk == "double_chance":
+        return g["result"] in _AI_DC_MAP[side] if side in _AI_DC_MAP else None
+    if mk in _AI_STAT_MAP:
+        col = ts.get(_AI_STAT_MAP[mk]) or {}
+        return ou(col.get(scope if scope in ("home", "away", "total") else "total"))
+    if mk in ("player_shots_ou", "player_fouls_ou", "player_cards"):
+        player = _resolve_player(bet, actuals)
+        if player is None:
+            return None
+        if mk == "player_cards":
+            return (player.get("yellow") or 0) >= 1   # bettable side is "receives a card"
+        return ou(player.get("fouls") if mk == "player_fouls_ou" else player.get("shots"))
+    return None
+
+
+def _grade_ai_bet(bet: dict, actuals: dict, home: str, away: str) -> bool | None:
+    """Grade an AI pick. Prefers the structured contract fields; falls back to free-text
+    parsing for legacy stored records that predate those fields. None = couldn't grade."""
+    if (bet.get("marketKey") or "").strip():
+        return _grade_structured(bet, actuals)
+    return _grade_freetext(bet, actuals, home, away)
+
+
+def _grade_freetext(bet: dict, actuals: dict, home: str, away: str) -> bool | None:
+    """Best-effort grading of a free-form AI pick (legacy records with no structured fields).
+    None = couldn't grade. Handles goals/result/BTTS, team stat O/U, AND player props."""
+    market = bet.get("market", "") or ""
+    selection = bet.get("selection", "") or ""
+    subject = bet.get("player") or bet.get("subject") or ""   # dedicated player field if present
+    text = f"{market} {selection} {subject}".lower()
     g = actuals["goals"]
     ts = actuals["teamStats"]
     hl, al = (home or "").lower(), (away or "").lower()
@@ -531,6 +677,19 @@ def _grade_ai_bet(market: str, selection: str, actuals: dict, home: str, away: s
         side = "over"
     else:
         side = None
+
+    # ---- player props (graded before team stats so "shots"/"fouls" aren't read as team) ----
+    is_player = ("player" in market.lower()) or ("jogador" in text) or bool(subject)
+    if is_player:
+        player = _match_actual_player(f"{subject} {selection} {market}", actuals)
+        if player is None:
+            return None  # player didn't play / unmatched -> can't grade (don't fall through)
+        if "card" in text or "cart" in text or "amarelo" in text:
+            return (player.get("yellow") or 0) >= 1   # "recebe cartão"
+        val = player.get("fouls") if ("foul" in text or "falta" in text) else player.get("shots")
+        if val is None or line is None or side is None:
+            return None
+        return (val > line) if side == "over" else (val <= line)
 
     # both teams to score
     if any(w in text for w in ("both teams", "ambos marcam", "btts", "both score")):
@@ -573,42 +732,110 @@ def _grade_ai_bet(market: str, selection: str, actuals: dict, home: str, away: s
     return None
 
 
+def _new_acc() -> dict:
+    return {"tiers": {t: {"hits": 0, "total": 0} for t in ("high", "medium", "low")},
+            "byMarket": {}, "bets": [], "matches": 0, "ungraded": 0, "_calib": []}
+
+
+def _grade_bet_list(bets: list, actuals: dict, home: str, away: str, acc: dict, label: str) -> bool:
+    """Grade a list of AI picks into ``acc`` (tiers + byMarket + calibration + bets).
+    Returns True if any pick graded."""
+    graded = False
+    for b in bets or []:
+        conf = (b.get("confidence") or "medium").lower()
+        if conf not in acc["tiers"]:
+            conf = "medium"
+        correct = _grade_ai_bet(b, actuals, home, away)
+        if correct is not None:
+            acc["tiers"][conf]["total"] += 1
+            acc["tiers"][conf]["hits"] += 1 if correct else 0
+            mkt = b.get("marketKey") or b.get("market") or "—"
+            mm = acc["byMarket"].setdefault(mkt, {"hits": 0, "total": 0})
+            mm["total"] += 1
+            mm["hits"] += 1 if correct else 0
+            mp = b.get("modelProbability")
+            if isinstance(mp, (int, float)):
+                acc["_calib"].append((float(mp), bool(correct)))
+            graded = True
+        else:
+            acc["ungraded"] += 1
+        acc["bets"].append({"match": label, "market": b.get("market"), "marketKey": b.get("marketKey"),
+                            "selection": b.get("selection"), "confidence": conf, "correct": correct})
+    return graded
+
+
+def _finalize_acc(acc: dict) -> dict:
+    for t in acc["tiers"].values():
+        t["rate"] = round(t["hits"] / t["total"], 3) if t["total"] else None
+    for mm in acc["byMarket"].values():
+        mm["rate"] = round(mm["hits"] / mm["total"], 3) if mm["total"] else None
+    oh = sum(t["hits"] for t in acc["tiers"].values())
+    ot = sum(t["total"] for t in acc["tiers"].values())
+    acc["overall"] = {"hits": oh, "total": ot, "rate": round(oh / ot, 3) if ot else None}
+    # AI calibration + Brier over picks that carry a stated probability (individual analyses).
+    calib = acc.pop("_calib", [])
+    if calib:
+        buckets = []
+        for i in range(len(_CALIB_EDGES) - 1):
+            lo, hi = _CALIB_EDGES[i], _CALIB_EDGES[i + 1]
+            sub = [c for c in calib if lo <= c[0] < hi]
+            if sub:
+                buckets.append({"range": f"{int(lo * 100)}-{int(min(hi, 1.0) * 100)}%", "n": len(sub),
+                                "predicted": round(sum(p for p, _ in sub) / len(sub), 3),
+                                "actual": round(sum(1 for _, c in sub if c) / len(sub), 3)})
+        acc["calibration"] = buckets
+        acc["brier"] = round(sum((p - (1.0 if c else 0.0)) ** 2 for p, c in calib) / len(calib), 4)
+    return acc
+
+
 def _ai_performance() -> dict:
+    """Grade ALL stored AI picks vs results — both the individual analyses and the
+    consensus — so the user can see how each performs (and whether consensus adds value)."""
     days = fixtures.list_world_cup_matches()
     finished = [m for d in days for m in d["matches"] if m["statusType"] == "finished"]
     store = _gemini_load()
-    tiers = {t: {"hits": 0, "total": 0} for t in ("high", "medium", "low")}
-    bets, matches_with = [], 0
+    consensus = _new_acc()
+    individual = _new_acc()
+    individual["analysesGraded"] = 0
     for m in finished:
-        entry = store.get(str(m["id"])) or {}
-        final = entry.get("final")
-        if not final or not final.get("consensusBets"):
+        secs = _entry_sections(store.get(str(m["id"])))
+        finals = [s.get("final") for s in secs if s.get("final") and s["final"].get("consensusBets")]
+        analyses = [a for s in secs for a in (s.get("analyses") or []) if a.get("topBets")]
+        if not finals and not analyses:
             continue
         try:
             md = endpoints.match_details(m["id"])
             actuals = accuracy.extract_actuals(md)
         except Exception:
             continue
-        graded_any = False
-        for b in final["consensusBets"]:
-            conf = (b.get("confidence") or "medium").lower()
-            if conf not in tiers:
-                conf = "medium"
-            correct = _grade_ai_bet(b.get("market", ""), b.get("selection", ""), actuals, m["home"], m["away"])
-            if correct is not None:
-                tiers[conf]["total"] += 1
-                tiers[conf]["hits"] += 1 if correct else 0
-                graded_any = True
-            bets.append({"match": f"{m['home']} x {m['away']}", "market": b.get("market"),
-                         "selection": b.get("selection"), "confidence": conf, "correct": correct})
-        if graded_any:
-            matches_with += 1
-    for t in tiers.values():
-        t["rate"] = round(t["hits"] / t["total"], 3) if t["total"] else None
-    oh = sum(t["hits"] for t in tiers.values())
-    ot = sum(t["total"] for t in tiers.values())
-    return {"tiers": tiers, "overall": {"hits": oh, "total": ot, "rate": round(oh / ot, 3) if ot else None},
-            "matchesWithConsensus": matches_with, "bets": bets}
+        base = f"{m['home']} x {m['away']}"
+        # individual analyses (each Gemini call's topBets)
+        a_any = False
+        for ai_i, a in enumerate(analyses):
+            individual["analysesGraded"] += 1
+            label = f"{base} — análise {ai_i + 1}"
+            if _grade_bet_list(a.get("topBets"), actuals, m["home"], m["away"], individual, label):
+                a_any = True
+        if a_any:
+            individual["matches"] += 1
+        # consensus (final) picks
+        c_any = False
+        multi = len(finals) > 1
+        for si, final in enumerate(finals):
+            label = base + (f" (seção {si + 1})" if multi else "")
+            if _grade_bet_list(final.get("consensusBets"), actuals, m["home"], m["away"], consensus, label):
+                c_any = True
+        if c_any:
+            consensus["matches"] += 1
+    _finalize_acc(consensus)
+    _finalize_acc(individual)
+    return {
+        "consensus": consensus,
+        "individual": individual,
+        # Backward-compatible top-level keys (existing UI reads these as the consensus view).
+        "tiers": consensus["tiers"], "overall": consensus["overall"],
+        "bets": consensus["bets"], "matchesWithConsensus": consensus["matches"],
+    }
 
 
 @betstats.get("/api/ai-performance")

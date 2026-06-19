@@ -92,6 +92,37 @@ PROB_CAP = 0.93          # never claim more than this certainty (real "99%" pick
 # are more intense than mixed recent form). Measured via dashboard "Viés do modelo".
 STAT_CORRECTION = {"shots": 1.12, "yellowCards": 0.80}  # WC runs cooler on cards than recent form
 
+# Count-prop confidence calibration: shrink team/player over/under probabilities
+# toward 0.5 (1.0 = no shrink). The model is overconfident on high-certainty count
+# lines (measured: 90-100% bucket predicts .93 but hits .88). Does NOT change which
+# side is picked, only the stated confidence (improves Brier / honest reliability).
+# Measured on 28 finished matches: callBrier .1862->.1855, high-conf gaps tightened,
+# zero hit-rate change (verified: shrink is applied after the side is chosen). Safe.
+COUNT_CAL_K = 0.90
+
+# Tournament goal-intensity correction. Recent mixed form under-predicts WC group-stage
+# scoring (measured: predicted total ~2.63 vs actual ~3.18, a ~17% shortfall). Scales
+# both expected-goal means (1.0 = no correction). 1.08 closes most of the gap without
+# chasing the noisier BTTS level; lifted BTTS hit-rate .46->.64 and 1X2 Brier .618->.607.
+# FLAG: re-measure on /api/dashboard as more matches finish; re-check at the knockout
+# stage where the scoring regime may shift.
+GOALS_CORRECTION = 1.08
+# Advantage on the first-listed ("home") team's goal mean. WC venues are NEUTRAL, so this
+# is really absorbing missing seeding/ranking info: the first-listed (higher-seeded) side
+# won 15/28 while the model picked 0 draws and over-picked the away side. Kept small (1.04)
+# to capture the monotone 1X2-Brier gain without over-fitting a listing-order artifact.
+# FLAG: durable fix is an explicit seeding/FIFA-ranking feature, not a positional multiplier;
+# re-measure before raising and re-check at the knockout stage.
+HFA = 1.04
+
+# Player-card rate shrinkage toward a base rate (Bayesian, by appearances). HELD at no-op:
+# shrinking pushes small-sample players below the 0.30 surfacing threshold, collapsing the
+# market (34->12 calls) — the apparent .27->.50 gain is a moving-denominator artifact and
+# reproduces the project's recorded "cooling player cards empties the market" finding.
+# Revisit only with 50+ surfaced calls at a fixed threshold, judged by Brier (not hit-rate).
+PLAYER_CARD_SHRINK_K = 0.0
+PLAYER_CARD_BASE = 0.18  # league-ish yellow cards per player-appearance
+
 
 class CountDist:
     """A discrete count distribution with a target mean and optional variance.
@@ -114,10 +145,13 @@ class CountDist:
         return _poisson_pmf(k, self.mean)
 
     def over(self, line: float, cap: int = 60) -> float:
-        """P(X > line) for a .5 line, capped so confidence isn't overstated."""
+        """P(X > line) for a .5 line, calibration-shrunk then capped."""
         k0 = math.floor(line)
         cdf = sum(self.pmf(k) for k in range(0, k0 + 1))
-        return round(min(PROB_CAP, max(1 - PROB_CAP, 1.0 - cdf)), 4)
+        p = 1.0 - cdf
+        if COUNT_CAL_K != 1.0:
+            p = 0.5 + (p - 0.5) * COUNT_CAL_K
+        return round(min(PROB_CAP, max(1 - PROB_CAP, p)), 4)
 
     def top(self, n: int = 3, cap: int = 40) -> list[dict]:
         """The n most probable exact counts: [{value, prob}, ...]."""
@@ -180,8 +214,8 @@ def _goals_market(home: dict, away: dict, hfa: float = 1.0) -> dict:
         raw = v / baseline
         return 1 + (raw - 1) * (n / (n + STRENGTH_SHRINK_K))
 
-    lh = strength(h_gf, n_h) * strength(a_ga, n_a) * baseline * hfa
-    la = strength(a_gf, n_a) * strength(h_ga, n_h) * baseline / hfa
+    lh = strength(h_gf, n_h) * strength(a_ga, n_a) * baseline * hfa * GOALS_CORRECTION
+    la = strength(a_gf, n_a) * strength(h_ga, n_h) * baseline / hfa * GOALS_CORRECTION
     lh = min(max(lh, 0.1), 6.0)
     la = min(max(la, 0.1), 6.0)
 
@@ -355,7 +389,10 @@ def _player_props_for_team(team: dict, opp: dict, xi: list[int] | None,
             continue
         apps = p["appearances"]
         foul_mean = (_mean(p["fouls"]) or 0) * foul_factor
-        card_rate = (p["yellow"] / apps) * ref_factor
+        # Bayesian shrink the per-game card rate toward a base rate (small samples
+        # over-state card risk). K=0 -> raw yellow/appearances.
+        card_rate = ((p["yellow"] + PLAYER_CARD_SHRINK_K * PLAYER_CARD_BASE)
+                     / (apps + PLAYER_CARD_SHRINK_K)) * ref_factor
         entry = {
             "playerId": pid,
             "name": name,
@@ -444,7 +481,7 @@ def analyze(dataset: dict) -> dict:
     sample_n = min(home["matchesSampled"], away["matchesSampled"])
     confidence = "low" if sample_n < 3 else ("medium" if sample_n < 6 else "high")
     ref_factor = dataset.get("refereeFactor", 1.0)
-    goals = _goals_market(home, away)
+    goals = _goals_market(home, away, HFA)
     team_props = _team_props(home, away, ref_factor)
     return {
         "event": dataset["event"],

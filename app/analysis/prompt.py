@@ -1,46 +1,68 @@
 """Build the Gemini prompt and response schema from the dataset + engine output.
 
-The goal is a sharp, well-calibrated betting analyst that maximizes hit-rate by
+The goal is a sharp, well-CALIBRATED betting analyst that captures genuine edges by
 using the model's own probabilities as a prior and adjusting with the supplied
-form / matchup / referee context — never inventing data.
+form / matchup / referee context AND the model's MEASURED systematic errors — never
+inventing data. Every pick carries structured fields (marketKey/side/line/scope/
+playerId) so it can be graded automatically against the finished-match actuals.
 """
 from __future__ import annotations
 
 import json
 
 SYSTEM_INSTRUCTION = (
-    "You are an elite football betting analyst whose only objective is the highest "
-    "possible hit-rate on your selections. You are given, for one upcoming match: "
-    "(1) both teams' recent-form stats (goals, corners, shots, shots on target, "
-    "fouls, cards) for AND against, (2) the assigned referee's card tendency, "
-    "(3) probabilities already computed by a calibrated statistical model, plus its "
-    "headline predictions, and (4) the model's HISTORICAL hit-rate per market "
-    "(marketReliability) measured on already-finished matches.\n\n"
+    "You are an elite football betting analyst. Your objective is a set of WELL-CALIBRATED "
+    "selections that capture genuine edges — your stated probability must match the real "
+    "frequency. Skip coin-flips AND skip trivially-likely low-value picks (a 95% Under that "
+    "everyone knows is not an edge).\n\n"
+    "You are given, for one upcoming match: (1) both teams' recent-form stats for AND against "
+    "(goals, corners, shots, shots on target, fouls, cards), (2) the referee's card tendency, "
+    "(3) probabilities and headline predictions from a calibrated statistical model, (4) the "
+    "model's HISTORICAL per-market hit-rate (marketReliability), (5) the model's MEASURED "
+    "systematic errors (calibrationContext) and result base rates (resultPrior), and (6) "
+    "per-player expectations and the exact betting lines the model priced (playerProps, "
+    "availableLines).\n\n"
     "Method:\n"
-    "- Treat the statistical model's probabilities as a strong PRIOR. Only deviate "
-    "when the form/matchup/referee context gives a concrete reason, and say why.\n"
-    "- CROSS-REFERENCE every pick with marketReliability: strongly prefer markets "
-    "where the model is historically accurate (high hit-rate), and be skeptical of "
-    "markets with a low hit-rate (e.g. match result / 1X2 is often unreliable) — "
-    "lower your confidence there even if the probability looks high. If a market's "
-    "reliability sample is tiny, treat the hit-rate as weak evidence.\n"
-    "- Always reason about how one team's 'for' rate meets the opponent's 'against' "
-    "rate (e.g. a high-corner team vs a team that concedes many corners).\n"
-    "- Use ONLY the data provided. Never invent injuries, news, lineups, or stats. "
-    "If the sample is small or the lineup is provisional, lower your confidence.\n"
-    "- Prefer markets with a clear edge AND good historical reliability. Skip coin-flips.\n"
-    "- DIVERSIFY — this is mandatory. Your selections must span SEVERAL different market "
-    "families: match result (1X2) / double chance, over-under goals, both teams to score, "
-    "corners, cards, shots / shots on target, and player props (player shots, fouls, cards). "
-    "Do NOT return a list that is exclusively 'Under' (or exclusively 'Over'). Low-scoring "
-    "form makes Unders tempting, but a useful slate also includes a likely RESULT, a BTTS "
-    "call, OVER picks where a matchup supports them (e.g. an attacking team vs a leaky "
-    "defense, or a player likely to shoot), and so on. If your edges cluster on one side, "
-    "still include the strongest picks from other families and the opposite direction. "
-    "Aim for at most ~half your picks on any single direction.\n"
-    "- Output your STRONGEST 5-8 selections (varied per the rule above), each with YOUR "
-    "probability (0-1, calibrated — don't inflate), a confidence level, and a one-line "
-    "data-grounded rationale that, when relevant, cites the market's historical hit-rate."
+    "- Treat the model's probabilities as a strong PRIOR; deviate only with a concrete "
+    "form/matchup/referee/calibration reason, and say why.\n"
+    "- CALIBRATION-CORRECTION (use calibrationContext): before trusting an engine mean, shift "
+    "it by the measured signed error. The engine UNDER-predicts total goals and BTTS and "
+    "OVER-predicts fouls — so nudge goals/BTTS/Over-goals probabilities UP and fouls-Over DOWN. "
+    "State the adjustment you made in the rationale.\n"
+    "- CROSS-REFERENCE marketReliability: prefer markets where the model is historically "
+    "accurate; be skeptical of low-hit-rate markets (1X2 is often unreliable). If a sample is "
+    "tiny, treat its hit-rate as weak evidence.\n"
+    "- 1X2 / RESULT (use resultPrior): venues are NEUTRAL and draws are ~36%, yet the engine "
+    "picked draw 0/28 and over-picked the second-listed (away) side. Actively consider DRAW and "
+    "DOUBLE CHANCE; demand a concrete form reason before backing the away side to win outright. "
+    "Do not blindly echo the engine's 1X2 pick.\n"
+    "- 'FOR meets AGAINST': every rationale must cite BOTH the team's for-rate AND the "
+    "opponent's against-rate from the payload (e.g. high-corner team vs a team conceding many).\n"
+    "- PLAYER PROPS: only pick a player present in playerProps, using that player's supplied "
+    "line/expected/cardProbAtLeastOne — never invent a player or a line. Down-weight players "
+    "with low appearances/confidence or a provisional lineup. Only back a player card "
+    "(side 'yes') when cardProbAtLeastOne is clearly high (~0.45+) — the engine over-states "
+    "card risk.\n"
+    "- Use ONLY the supplied data. Never invent injuries, news, lineups, or stats. If the "
+    "sample is small or the lineup is provisional, lower your confidence.\n\n"
+    "DIVERSITY (mandatory): output your STRONGEST 5-8 selections spanning at least THREE "
+    "distinct market families (result/double-chance, goals O/U, BTTS, corners, cards, shots/SoT, "
+    "fouls, player props) AND both directions. At most ~half may be 'Under' — an all-Under slate "
+    "is invalid; if your raw edges are all Unders, replace the weakest with the best Over / "
+    "BTTS-Yes / result / player-shot-Over pick. When playerProps are present and not provisional, "
+    "include at least one player-prop pick.\n\n"
+    "STRUCTURED-PICK CONTRACT (every pick MUST be machine-gradeable):\n"
+    "- marketKey: one of goals_ou, btts, result_1x2, double_chance, corners_ou, cards_ou, "
+    "shots_ou, sot_ou, fouls_ou, player_shots_ou, player_fouls_ou, player_cards.\n"
+    "- side: over/under for *_ou; yes/no for btts and player_cards; home/away/draw for "
+    "result_1x2; home_or_draw/away_or_draw/home_or_away for double_chance.\n"
+    "- line: numeric threshold taken ONLY from availableLines (or the player's lines); REQUIRED "
+    "for every *_ou market; omit for btts/result_1x2/double_chance/player_cards.\n"
+    "- scope: home/away/total — REQUIRED for team-stat *_ou (corners/cards/shots/sot/fouls).\n"
+    "- playerId + playerName: copied EXACTLY from playerProps — REQUIRED for player_* markets.\n"
+    "- 'market' and 'selection' are human-readable text only and are NOT used for grading.\n"
+    "Treat every measured number (goals/fouls bias, card over-statement, draw rate, direction "
+    "split) as a SOFT calibration prior from a small 28-match sample — never as a mandatory pick."
 )
 
 
@@ -50,18 +72,22 @@ def _avg(xs):
 
 
 def _form_summary(team: dict) -> dict:
+    sf, sa = team["statFor"], team["statAgainst"]
     return {
         "name": team["name"],
         "matchesSampled": team["matchesSampled"],
         "goalsFor": _avg(team["goalsFor"]),
         "goalsAgainst": _avg(team["goalsAgainst"]),
-        "cornersFor": _avg(team["statFor"]["corners"]),
-        "cornersAgainst": _avg(team["statAgainst"]["corners"]),
-        "shotsFor": _avg(team["statFor"]["shots"]),
-        "shotsAgainst": _avg(team["statAgainst"]["shots"]),
-        "shotsOnTargetFor": _avg(team["statFor"]["shotsOnTarget"]),
-        "yellowCardsFor": _avg(team["statFor"]["yellowCards"]),
-        "foulsFor": _avg(team["statFor"]["fouls"]),
+        "cornersFor": _avg(sf["corners"]),
+        "cornersAgainst": _avg(sa["corners"]),
+        "shotsFor": _avg(sf["shots"]),
+        "shotsAgainst": _avg(sa["shots"]),
+        "shotsOnTargetFor": _avg(sf["shotsOnTarget"]),
+        "shotsOnTargetAgainst": _avg(sa["shotsOnTarget"]),
+        "yellowCardsFor": _avg(sf["yellowCards"]),
+        "yellowCardsAgainst": _avg(sa["yellowCards"]),
+        "foulsFor": _avg(sf["fouls"]),
+        "foulsAgainst": _avg(sa["fouls"]),
     }
 
 
@@ -79,12 +105,101 @@ def _reliability_summary(reliability: dict | None) -> dict | None:
     }
 
 
+def _calibration_summary(reliability: dict | None) -> dict | None:
+    """The model's MEASURED systematic errors, handed to the AI as soft priors."""
+    if not reliability:
+        return None
+    bias = [{"label": b["label"], "error": b["error"], "n": b["n"]}
+            for b in (reliability.get("bias") or [])]
+    if not bias and not reliability.get("direction"):
+        return None
+    return {
+        "biasPredictedMinusActual": bias,
+        "directionHitRate": reliability.get("direction"),
+        "goalsNote": "Engine UNDER-predicts total goals (~+0.5/game) and BTTS, and OVER-predicts "
+                     "fouls. Nudge goals/BTTS/Over-goals up and fouls-Over down.",
+        "playerCardNote": "Engine OVER-states player card risk (predicted ~0.37 vs actual ~0.27); "
+                          "only back a card when the probability is clearly high.",
+        "note": "Signed error = predicted minus actual on finished matches (n per row). "
+                "Small 28-match sample — soft priors, not mandates.",
+    }
+
+
+# Observed 1X2 base rates on the finished sample (small-sample prior).
+RESULT_PRIOR = {
+    "drawBaseRate": 0.36,
+    "firstListedWinRate": 0.54,
+    "awayWinRate": 0.11,
+    "note": "Neutral WC venue. The engine picked draw 0/28 and over-picked the away "
+            "(second-listed) side. Actively weigh Draw and Double Chance. Small-sample prior.",
+}
+
+
+def _player_props_summary(engine_output: dict) -> dict:
+    """Top players per side with the engine's expectations + the exact lines it priced.
+    The AI currently gets NO player data; without this every player pick is invented."""
+    pp = engine_output.get("playerProps", {})
+    out = {}
+    for side in ("home", "away"):
+        sel = []
+        for p in [p for p in pp.get(side, []) if p.get("appearances")][:6]:
+            entry = {
+                "playerId": p["playerId"],
+                "playerName": p.get("name"),
+                "side": side,
+                "position": p.get("position"),
+                "appearances": p["appearances"],
+                "confidence": p.get("confidence"),
+                "fouls": p.get("fouls"),  # {expected, lines}
+                "cardProbAtLeastOne": (p.get("card") or {}).get("probAtLeastOne"),
+            }
+            sh = p.get("shots") or {}
+            if sh.get("lines"):
+                entry["shots"] = {"expected": sh.get("expected"), "lines": sh.get("lines")}
+            sel.append(entry)
+        out[side] = sel
+    return out
+
+
+def _available_lines(engine_output: dict) -> dict:
+    """The exact lines the engine priced, so the model cannot invent ungradeable lines."""
+    goals = engine_output["goals"]
+    team_props = {}
+    for k, v in engine_output["teamProps"].items():
+        scopes = {s: list(v[s]["lines"].keys())
+                  for s in ("home", "away", "total") if s in v and v[s].get("lines")}
+        if scopes:
+            team_props[k] = scopes
+    return {"goals": list(goals["overUnder"].keys()), "teamProps": team_props}
+
+
+def _team_props_probs(engine_output: dict) -> dict:
+    """teamProps with {expected, lines} per scope (the AI must see per-line probabilities)."""
+    out = {}
+    for k, v in engine_output["teamProps"].items():
+        scopes = {s: {"expected": v[s]["expected"], "lines": v[s]["lines"]}
+                  for s in ("home", "away", "total") if s in v and "lines" in v[s]}
+        if scopes:
+            out[k] = scopes
+    return out
+
+
 def build_contents(dataset: dict, engine_output: dict, reliability: dict | None = None) -> str:
     ref = dataset.get("referee") or {}
+    meta = engine_output.get("meta") or {}
+    goals = engine_output["goals"]
     payload = {
         "match": engine_output["event"],
         "lineupConfirmed": dataset.get("lineupConfirmed", False),
+        "dataConfidence": meta.get("confidence"),
+        "meta": {
+            "homeMatchesSampled": meta.get("homeMatchesSampled"),
+            "awayMatchesSampled": meta.get("awayMatchesSampled"),
+            "playerPropsProvisional": meta.get("playerPropsProvisional"),
+        },
         "marketReliability": _reliability_summary(reliability),
+        "calibrationContext": _calibration_summary(reliability),
+        "resultPrior": RESULT_PRIOR,
         "referee": {
             "name": ref.get("name"),
             "avgYellowPerGame": ref.get("avgYellow"),
@@ -95,24 +210,44 @@ def build_contents(dataset: dict, engine_output: dict, reliability: dict | None 
         "awayForm": _form_summary(dataset["away"]),
         "modelPredictions": engine_output.get("predictions"),
         "modelProbabilities": {
-            "result": engine_output["goals"]["result"],
-            "expectedGoals": engine_output["goals"]["expectedGoals"],
-            "overUnderGoals": engine_output["goals"]["overUnder"],
-            "btts": engine_output["goals"]["btts"],
-            "teamProps": {k: {s: v.get(s, {}).get("expected")
-                              for s in ("home", "away", "total")}
-                          for k, v in engine_output["teamProps"].items()},
+            "result": goals["result"],
+            "doubleChance": goals["doubleChance"],
+            "expectedGoals": goals["expectedGoals"],
+            "overUnderGoals": goals["overUnder"],
+            "btts": goals["btts"],
+            "teamProps": _team_props_probs(engine_output),
         },
-        "dataConfidence": engine_output["meta"]["confidence"],
+        "availableLines": _available_lines(engine_output),
+        "playerProps": _player_props_summary(engine_output),
     }
     return (
-        "Analyze this match and return your strongest, best-calibrated betting "
-        "selections. Cross-check the model's numbers against the form and flag any "
-        "you'd fade.\n\n" + json.dumps(payload, ensure_ascii=False, indent=2)
+        "Analyze this match and return your strongest, best-calibrated betting selections. "
+        "Cross-check the model's numbers against the form AND the measured calibration errors, "
+        "and flag any pick you'd fade. Every pick must carry the structured fields "
+        "(marketKey/side/line/scope/playerId) per the contract.\n\n"
+        + json.dumps(payload, ensure_ascii=False, indent=2)
     )
 
 
 # Structured-output schema (google-genai response_schema, OpenAPI subset).
+# NOTE: JSON-schema cannot express "line required IFF marketKey ends with _ou"; those
+# conditional requirements are enforced in SYSTEM_INSTRUCTION and validated in the grader.
+_MARKET_KEYS = ["goals_ou", "btts", "result_1x2", "double_chance", "corners_ou", "cards_ou",
+                "shots_ou", "sot_ou", "fouls_ou", "player_shots_ou", "player_fouls_ou", "player_cards"]
+_SIDES = ["over", "under", "yes", "no", "home", "away", "draw",
+          "home_or_draw", "away_or_draw", "home_or_away"]
+
+_STRUCTURED_BET_PROPS = {
+    "marketKey": {"type": "string", "enum": _MARKET_KEYS, "description": "Canonical machine-gradeable market key."},
+    "side": {"type": "string", "enum": _SIDES, "description": "Direction/selection per the contract."},
+    "line": {"type": "number", "description": "Numeric threshold from availableLines; required for *_ou markets."},
+    "scope": {"type": "string", "enum": ["home", "away", "total"], "description": "Required for team-stat *_ou markets."},
+    "playerId": {"type": "integer", "description": "Required for player_* markets; copied from playerProps."},
+    "playerName": {"type": "string", "description": "Required for player_* markets; copied from playerProps."},
+    "market": {"type": "string", "description": "Human-readable, e.g. 'Total corners', 'Player shots'."},
+    "selection": {"type": "string", "description": "Human-readable, e.g. 'Under 9.5', 'Mbappé Over 1.5'."},
+}
+
 RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -123,17 +258,16 @@ RESPONSE_SCHEMA = {
         },
         "topBets": {
             "type": "array",
-            "description": "Your 5-8 strongest selections, best first.",
+            "description": "Your 5-8 strongest selections, best first (varied per the diversity rule).",
             "items": {
                 "type": "object",
                 "properties": {
-                    "market": {"type": "string", "description": "e.g. 'Total corners', 'Match result', 'Player shots'"},
-                    "selection": {"type": "string", "description": "e.g. 'Under 9.5', 'Switzerland', 'Over 1.5'"},
+                    **_STRUCTURED_BET_PROPS,
                     "modelProbability": {"type": "number", "description": "Your calibrated probability 0-1."},
                     "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
-                    "rationale": {"type": "string", "description": "One line, cite the numbers."},
+                    "rationale": {"type": "string", "description": "One line; cite for-rate + against-rate + any calibration shift."},
                 },
-                "required": ["market", "selection", "modelProbability", "confidence", "rationale"],
+                "required": ["marketKey", "market", "selection", "side", "modelProbability", "confidence", "rationale"],
             },
         },
         "cautions": {
@@ -147,13 +281,14 @@ RESPONSE_SCHEMA = {
 
 # --- final consensus synthesis (compares two prior analyses) ---
 SYNTHESIS_SYSTEM = (
-    "You are given TWO independent AI betting analyses of the SAME match. Produce a "
-    "FINAL CONSENSUS. Keep ONLY the selections that BOTH analyses agree on — same "
-    "market and same side/direction (e.g. both say Under 2.5 goals, or both pick the "
-    "same team). For each consensus pick, merge their reasoning into one line and give "
-    "a consensus confidence (use the lower of the two if they differ). List notable "
-    "DIVERGENCES (where they disagree) separately, briefly. Be concise and use ONLY "
-    "what the two analyses contain — do not introduce new picks."
+    "You are given TWO independent AI betting analyses of the SAME match. Produce a FINAL "
+    "CONSENSUS. Keep ONLY selections that BOTH analyses agree on — matched on "
+    "(marketKey + side + line + scope + playerId), not on free text. For each consensus pick, "
+    "merge their reasoning into one line, give a consensus confidence (use the lower of the two "
+    "if they differ), and CARRY THROUGH the structured fields (marketKey, side, line, scope, "
+    "playerId, playerName) UNCHANGED so the consensus is graded on the same code path. List "
+    "notable DIVERGENCES separately, briefly. Use ONLY what the two analyses contain — introduce "
+    "no new picks."
 )
 
 SYNTHESIS_SCHEMA = {
@@ -162,16 +297,15 @@ SYNTHESIS_SCHEMA = {
         "summary": {"type": "string", "description": "2-3 sentence consensus read of the match."},
         "consensusBets": {
             "type": "array",
-            "description": "Only picks BOTH analyses agreed on.",
+            "description": "Only picks BOTH analyses agreed on (matched on the structured fields).",
             "items": {
                 "type": "object",
                 "properties": {
-                    "market": {"type": "string"},
-                    "selection": {"type": "string"},
+                    **_STRUCTURED_BET_PROPS,
                     "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
                     "rationale": {"type": "string"},
                 },
-                "required": ["market", "selection", "confidence", "rationale"],
+                "required": ["marketKey", "market", "selection", "side", "confidence", "rationale"],
             },
         },
         "divergences": {
@@ -186,6 +320,7 @@ SYNTHESIS_SCHEMA = {
 def build_synthesis_contents(a1: dict, a2: dict) -> str:
     return (
         "Two independent analyses of the same match follow. Produce the final consensus "
-        "(only picks both agree on).\n\nANALYSIS 1:\n" + json.dumps(a1, ensure_ascii=False)
+        "(only picks both agree on, matched on marketKey+side+line+scope+playerId; carry the "
+        "structured fields through unchanged).\n\nANALYSIS 1:\n" + json.dumps(a1, ensure_ascii=False)
         + "\n\nANALYSIS 2:\n" + json.dumps(a2, ensure_ascii=False)
     )

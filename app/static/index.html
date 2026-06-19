@@ -120,6 +120,9 @@
   .gemini li, .gpanel li { margin:4px 0; }
   .ref { font-size:13px; display:flex; align-items:center; gap:8px; border-left-color:var(--warn); }
   .ref svg { color:var(--warn); flex:0 0 auto; }
+  .gsec-h { font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.06em;
+            margin:14px 0 7px; padding-top:10px; border-top:1px dashed var(--border); }
+  .gsec-h:first-child { border-top:none; padding-top:0; margin-top:2px; }
   .gres { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:9px; }
   .gres .gh { font-size:10.5px; font-weight:650; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
   .oddin { width:58px; padding:5px 7px; border:1px solid var(--border); background:var(--bg); color:var(--text);
@@ -758,15 +761,19 @@ async function copyMatch(id, data, btn) {
   }
   try {
     const g = await api("/api/gemini/" + id);
-    if (g && g.final) {
-      const f = g.final;
-      lines.push("", "ANÁLISE FINAL DA IA (consenso)");
-      if (f.summary) lines.push(f.summary);
-      if (f.consensusBets && f.consensusBets.length) {
-        lines.push("Apostas de consenso:");
-        for (const b of f.consensusBets) lines.push(`• ${b.market}: ${b.selection} (${b.confidence})`);
-      }
-      if (f.createdAt) lines.push(`(gerada em ${f.createdAt})`);
+    const secs = (g && g.sections) || [];
+    const finals = secs.map(s => s.final).filter(Boolean);
+    if (finals.length) {
+      const multi = finals.length > 1;
+      finals.forEach((f, i) => {
+        lines.push("", "ANÁLISE FINAL DA IA (consenso)" + (multi ? ` — seção ${i + 1}` : ""));
+        if (f.summary) lines.push(f.summary);
+        if (f.consensusBets && f.consensusBets.length) {
+          lines.push("Apostas de consenso:");
+          for (const b of f.consensusBets) lines.push(`• ${b.market}: ${b.selection} (${b.confidence})`);
+        }
+        if (f.createdAt) lines.push(`(gerada em ${f.createdAt})`);
+      });
     } else {
       lines.push("", "ANÁLISE FINAL DA IA: ainda não gerada.");
     }
@@ -811,17 +818,23 @@ function renderGeminiBox(id, box, info) {
   box.appendChild(el("h3", null, ICON.spark + "<span>Análise da IA (Gemini)</span>"));
   if (!info.enabled)
     box.appendChild(el("p", "muted", "IA desativada — configure GEMINI_API_KEY no servidor para habilitar."));
-  info.analyses.forEach((a, i) => box.appendChild(geminiResult(a, i + 1, info.limit)));
-  if (info.final) box.appendChild(geminiFinal(info.final));
+  const sections = info.sections || [];
+  const multi = sections.length > 1;
+  sections.forEach((sec, si) => {
+    if (multi) box.appendChild(el("div", "gsec-h", "Seção " + (si + 1)));
+    sec.analyses.forEach((a, i) => box.appendChild(geminiResult(a, i + 1, info.limit)));
+    if (sec.final) box.appendChild(geminiFinal(sec.final));
+  });
 
+  const last = sections[sections.length - 1] || {};
   const btn = el("button", "primary");
   if (!info.enabled) { btn.innerHTML = ICON.spark + "<span>Pedir análise da IA</span>"; btn.disabled = true; }
-  else if (info.canAnalyze) { btn.innerHTML = ICON.spark + `<span>Pedir análise da IA (${info.used}/${info.limit})</span>`; }
-  else if (info.canFinal) { btn.innerHTML = ICON.target + "<span>Gerar análise final (comparar as 2)</span>"; }
+  else if (last.canAnalyze) { btn.innerHTML = ICON.spark + `<span>Pedir análise da IA (${last.used}/${info.limit})</span>`; btn.onclick = () => runGemini(id, box, btn); }
+  else if (last.canFinal) { btn.innerHTML = ICON.target + "<span>Gerar análise final (comparar as 2)</span>"; btn.onclick = () => runGemini(id, box, btn); }
+  else if (info.adminConfigured) { btn.innerHTML = ICON.spark + "<span>+ Nova seção da IA (admin)</span>"; btn.onclick = () => addGeminiSection(id, box, btn); }
   else { btn.textContent = "Análise final concluída"; btn.disabled = true; }
-  btn.onclick = () => runGemini(id, box, btn);
   box.appendChild(btn);
-  box.appendChild(el("p", "muted", "Até 2 análises independentes; depois uma análise final de consenso. As análises ficam salvas para todos."));
+  box.appendChild(el("p", "muted", "Até 2 análises independentes por seção; depois uma análise final de consenso. As análises ficam salvas para todos."));
 }
 
 async function runGemini(id, box, btn) {
@@ -830,6 +843,27 @@ async function runGemini(id, box, btn) {
   catch (e) {
     btn.disabled = false; btn.innerHTML = ICON.spark + "<span>Tentar novamente</span>";
     const err = el("p", "err", "Falha: " + e.message); box.appendChild(err);
+  }
+}
+
+let GEMINI_ADMIN_TOKEN = null;  // kept in memory for the session after first successful use
+async function addGeminiSection(id, box, btn) {
+  if (!GEMINI_ADMIN_TOKEN) {
+    const t = prompt("Token de admin para abrir uma nova seção da IA:");
+    if (!t) return;
+    GEMINI_ADMIN_TOKEN = t.trim();
+  }
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> abrindo seção…';
+  try {
+    const info = await api("/api/gemini/" + id, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "new_section", token: GEMINI_ADMIN_TOKEN }),
+    });
+    renderGeminiBox(id, box, info);
+  } catch (e) {
+    GEMINI_ADMIN_TOKEN = null;  // clear so a wrong token can be re-entered
+    btn.disabled = false; btn.innerHTML = ICON.spark + "<span>+ Nova seção da IA (admin)</span>";
+    box.appendChild(el("p", "err", "Falha: " + e.message));
   }
 }
 
@@ -885,32 +919,81 @@ async function loadDashboard(force) {
   } catch (e) { root.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
 }
 
-function renderAiPerformance(ai) {
-  const card = el("div", "gpanel"); card.style.marginTop = "12px";
-  card.appendChild(el("h3", null, ICON.spark + "<span>Desempenho da IA (consenso)</span>"));
-  if (!ai.matchesWithConsensus) {
-    card.appendChild(el("p", "muted", "Nenhuma análise final de consenso gerada ainda. Gere a análise final da IA em jogos finalizados para alimentar este painel."));
-    return card;
-  }
-  const t = ai.tiers, o = ai.overall;
-  const three = el("div", "three"); three.style.margin = "0 0 12px";
+const AI_CONF_LAB = { high: "Alta", medium: "Média", low: "Baixa" };
+const AI_CONF_ORDER = { high: 0, medium: 1, low: 2 };
+
+function aiTierRow(acc) {
+  const t = acc.tiers || {}, o = acc.overall || {};
+  const three = el("div", "three"); three.style.margin = "0 0 10px";
+  const brier = acc.brier != null ? `<div><div class="v">${acc.brier}</div><div class="l">Brier (picks c/ prob.)</div></div>` : "";
   three.innerHTML = `
     <div><div class="v" style="color:${pColor((t.high||{}).rate)}">${pct((t.high||{}).rate)}</div><div class="l">Alta conf. (${(t.high||{}).hits||0}/${(t.high||{}).total||0})</div></div>
     <div><div class="v" style="color:${pColor((t.medium||{}).rate)}">${pct((t.medium||{}).rate)}</div><div class="l">Média conf. (${(t.medium||{}).hits||0}/${(t.medium||{}).total||0})</div></div>
     <div><div class="v" style="color:${pColor((t.low||{}).rate)}">${pct((t.low||{}).rate)}</div><div class="l">Baixa conf. (${(t.low||{}).hits||0}/${(t.low||{}).total||0})</div></div>
-    <div><div class="v" style="color:${pColor(o.rate)}">${pct(o.rate)}</div><div class="l">Geral (${o.hits}/${o.total})</div></div>`;
-  card.appendChild(three);
-  const order = { high: 0, medium: 1, low: 2 }, lab = { high: "Alta", medium: "Média", low: "Baixa" };
-  const bets = [...ai.bets].sort((a, b) => order[a.confidence] - order[b.confidence]);
+    <div><div class="v" style="color:${pColor(o.rate)}">${pct(o.rate)}</div><div class="l">Geral (${o.hits||0}/${o.total||0})</div></div>${brier}`;
+  return three;
+}
+
+function aiByMarket(acc) {
+  const bm = acc.byMarket || {};
+  const keys = Object.keys(bm);
+  if (!keys.length) return null;
+  const sorted = keys.map(k => [k, bm[k]]).sort((a, b) => (b[1].rate || 0) - (a[1].rate || 0));
+  let rows = "";
+  for (const [k, v] of sorted) {
+    const flag = v.total < 10 ? ' <span class="muted">(amostra baixa)</span>' : "";
+    rows += `<tr><td class="t">${k}${flag}</td><td class="p" data-label="Acertos">${v.hits}/${v.total}</td>`
+      + `<td class="p" data-label="Taxa" style="color:${pColor(v.rate)}">${pc(v.rate)}</td></tr>`;
+  }
+  return dashTable('<tr class="hr"><th>Mercado (IA)</th><th class="p">Acertos</th><th class="p">Taxa</th></tr>', rows);
+}
+
+function aiBetsTable(bets) {
+  const sorted = [...(bets || [])].sort((a, b) => AI_CONF_ORDER[a.confidence] - AI_CONF_ORDER[b.confidence]);
   const wrap = el("div", "scroll"); const tb = el("table", "rwd");
   tb.innerHTML = '<tr class="hr"><th>Jogo</th><th>Mercado</th><th>Palpite</th><th class="p">Conf.</th><th class="p">Acerto</th></tr>';
-  for (const b of bets)
-    tb.innerHTML += `<tr><td class="t">${b.match}</td><td data-label="Mercado">${b.market || ""}</td>`
-      + `<td data-label="Palpite"><b>${b.selection || ""}</b></td><td class="p conf-${b.confidence}" data-label="Conf.">${lab[b.confidence]}</td>`
+  for (const b of sorted)
+    tb.innerHTML += `<tr><td class="t">${b.match}</td><td data-label="Mercado">${b.market || b.marketKey || ""}</td>`
+      + `<td data-label="Palpite"><b>${b.selection || ""}</b></td><td class="p conf-${b.confidence}" data-label="Conf.">${AI_CONF_LAB[b.confidence] || ""}</td>`
       + `<td class="p" data-label="Acerto">${b.correct == null ? '<span class="muted">n/a</span>' : chk(b.correct)}</td></tr>`;
-  wrap.appendChild(tb); card.appendChild(wrap);
-  card.appendChild(el("p", "muted", "Confere os palpites de consenso da IA vs resultado. 'n/a' = palpite que não dá para verificar automaticamente."));
+  wrap.appendChild(tb); return wrap;
+}
+
+function aiPanel(title, subtitle, acc) {
+  const card = el("div", "gpanel"); card.style.marginTop = "12px";
+  card.appendChild(el("h3", null, ICON.spark + `<span>${title}</span>`));
+  if (!acc || !(acc.overall && acc.overall.total) ) {
+    card.appendChild(el("p", "muted", subtitle));
+    return card;
+  }
+  card.appendChild(aiTierRow(acc));
+  const bm = aiByMarket(acc);
+  if (bm) { card.appendChild(el("p", "muted", "Acerto por mercado:")); card.appendChild(bm); }
+  card.appendChild(aiBetsTable(acc.bets));
+  const ung = acc.ungraded ? ` ${acc.ungraded} palpite(s) não verificáveis automaticamente.` : "";
+  card.appendChild(el("p", "muted", "'n/a' = palpite sem como verificar automaticamente." + ung));
   return card;
+}
+
+function renderAiPerformance(ai) {
+  const frag = document.createDocumentFragment();
+  const ind = ai.individual || {}, con = ai.consensus || { tiers: ai.tiers, overall: ai.overall, bets: ai.bets, matches: ai.matchesWithConsensus };
+  const hasAny = (ind.overall && ind.overall.total) || (con.overall && con.overall.total);
+  if (!hasAny) {
+    const card = el("div", "gpanel"); card.style.marginTop = "12px";
+    card.appendChild(el("h3", null, ICON.spark + "<span>Desempenho da IA</span>"));
+    card.appendChild(el("p", "muted", "Nenhuma análise da IA gerada ainda em jogos finalizados. Gere análises da IA (e o consenso) em jogos já encerrados para alimentar este painel."));
+    frag.appendChild(card);
+    return frag;
+  }
+  // ALL individual analyses (each Gemini call), then the consensus — so both are visible.
+  frag.appendChild(aiPanel(
+    `Desempenho da IA — análises individuais${ind.analysesGraded ? ` (${ind.analysesGraded})` : ""}`,
+    "Nenhuma análise individual verificável ainda.", ind));
+  frag.appendChild(aiPanel(
+    "Desempenho da IA — consenso",
+    "Nenhum consenso verificável ainda.", con));
+  return frag;
 }
 
 function dashTable(headHtml, rowsHtml) {

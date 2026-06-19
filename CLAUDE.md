@@ -32,9 +32,24 @@ Constantes em `app/analysis/engine.py`: `STRENGTH_SHRINK_K=5` (encolhe força à
 **resfriamento de cartões de time -20%**). Cartão de jogador pontuado de forma honesta (só o lado
 "recebe cartão" para risco >=30%).
 
-**Testado e NÃO ajudou** (revertido): Elo de seleções e xG (pioram na amostra caótica de fase de
-grupos — talvez ajudem no mata-mata, remedir depois). Resfriar cartão de **jogador** esvazia o
-mercado (joga todos abaixo do limiar de 30%) — não fazer.
+**Medido em 28 jogos finalizados e MANTIDO** (validado no `/api/dashboard` ao vivo):
+- `COUNT_CAL_K=0.90` — encolhe a confiança das O/U de contagem (time/jogador) em direção a 0.5
+  **depois** de escolher o lado (não muda hit-rate; só calibra). Corrige superconfiança medida no
+  topo (90-100% previa .93/acertava .88). callBrier .1862→.1855. Risco ~zero.
+- `GOALS_CORRECTION=1.08` — gols eram **sub-previstos** (média prevista ~2.63 vs real ~3.18, ~17%).
+  Escala as duas médias de gols. **BTTS subiu .46→.64**, Brier do 1X2 .618→.607, Gols O/U estável.
+  FLAG: remedir conforme mais jogos terminam e no mata-mata.
+- `HFA=1.04` — vantagem do time listado primeiro (sede neutra na Copa → na real captura seeding que
+  falta). Modelo escolhia empate 0/28 e exagerava no "away". Conservador (1.04) pega o ganho de
+  Brier do 1X2 sem overfit do artefato de ordem-de-listagem. FLAG: arrumar de verdade com feature
+  de ranking/seeding, não multiplicador posicional.
+
+**Testado e NÃO ajudou / NÃO manter** (revertido): Elo de seleções e xG (pioram na amostra caótica
+de fase de grupos — talvez ajudem no mata-mata, remedir depois). Resfriar cartão de **jogador**
+(`PLAYER_CARD_SHRINK_K`) esvazia o mercado (34→12 calls abaixo do limiar de 30%; o "ganho" .27→.50 é
+artefato de denominador móvel) — **confirmado, não fazer** (knob fica no código como no-op).
+Corrigir o viés de **faltas** (~-7%) corrigia o viés mas **baixava** o acerto de faltas e o geral —
+não manter.
 
 ## Como melhorar o modelo (regra)
 Toda mudança na engine deve ser **medida antes de manter**: rodar local → reiniciar →
@@ -75,6 +90,21 @@ Atualizar: `cd /opt/probability-wc && git pull && sudo systemctl restart probabi
   o erro real da API e devolve 503 com mensagem clara que a UI mostra.
 - `ADMIN_TOKEN` (default `""`): vazio = **editor de chave na UI desativado** (`/api/settings/gemini`
   → 403). Definir um segredo no `.env` pra liberar; sem ele, trocar a chave só via `.env` + restart.
+
+### Gemini — dados, prompt e avaliação (enriquecido)
+- O prompt (`prompt.py` `build_contents`) agora envia **muito mais dado**: `playerProps` (top 6/lado,
+  com linhas que a engine precificou — antes a IA não recebia NADA de jogador, então inventava),
+  `calibrationContext` (viés medido previsto-vs-real + split over/under como **priors soft**),
+  `resultPrior` (taxa de empate ~36%), `availableLines`, taxas **contra** do adversário por stat,
+  `doubleChance` e `teamProps` com `{expected, lines}` por escopo. Prompt ~26KB.
+- Cada palpite carrega campos **estruturados gradeáveis**: `marketKey` (enum), `side`, `line`,
+  `scope`, `playerId`/`playerName`. `_grade_ai_bet` usa eles (fallback regex/nome só p/ registros
+  antigos sem `marketKey`). **`/api/ai-performance` agora avalia TODAS as análises individuais E o
+  consenso** (não só o consenso), com breakdown por mercado + calibração/Brier da IA + contagem de
+  não-graváveis. UI mostra dois painéis (análises individuais + consenso).
+- **GOTCHA**: `response_schema` é subset OpenAPI. Após mudar o schema, **rodar 1 call real do Gemini**
+  pra confirmar que ele aceita os enums/`playerId` int — se rejeitar, o call **500a** (histórico).
+  Não dá pra testar local sem `GEMINI_API_KEY`.
 
 ## Convenções de commit
 Commitar **como o usuário (Nicholas)**, **sem `Co-Authored-By` / sem referência a Claude**.
