@@ -6,7 +6,9 @@ Python (per-supplier adapters). Served at the domain root.
 """
 from __future__ import annotations
 
+import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -245,6 +247,45 @@ def _search_one_safe(key: str, query: str) -> dict:
         adapter = _resolve_adapter(key)
         return {"key": key, "name": getattr(adapter, "name", key), "ok": False,
                 "error": str(exc), "products": []}
+
+
+# --------------------------------------------------------------------------
+# keep-alive: periodically ping each supplier so sessions don't expire by inactivity,
+# and re-capture any refreshed cookie (sliding sessions). Extends token life a lot.
+# --------------------------------------------------------------------------
+def _keepalive_once() -> None:
+    for s in store.list_suppliers():
+        if not (s.get("enabled") and s.get("hasToken")):
+            continue
+        key = s["key"]
+        try:
+            adapter = _resolve_adapter(key)
+            token = store.get_token(key)
+            if not adapter or not token:
+                continue
+            session = adapter.build_session(token)
+            adapter.check_auth(session)              # fires an authenticated request
+            refreshed = adapter.dump_token(session)  # capture any renewed cookie
+            if refreshed and refreshed != token:
+                store.set_token(key, refreshed)
+        except Exception:
+            pass
+
+
+def _keepalive_loop() -> None:
+    mins = get_settings().keepalive_minutes
+    if mins <= 0:
+        return
+    time.sleep(20 + (os.getpid() % 40))   # stagger workers a bit
+    while True:
+        _keepalive_once()
+        time.sleep(mins * 60)
+
+
+@compubot.on_event("startup")
+def _start_keepalive() -> None:
+    if get_settings().keepalive_minutes > 0:
+        threading.Thread(target=_keepalive_loop, daemon=True, name="keepalive").start()
 
 
 # Served at the domain root.
