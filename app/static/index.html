@@ -248,6 +248,7 @@ async function renderSuppliers(){
         <td>${s.hasToken?'<span class="pill ok">salvo</span>':'<span class="pill no">ausente</span>'} <span class="muted" id="test-${s.key}"></span></td>
         <td><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSupplier('${s.key}',this.checked)" style="width:auto"></td>
         <td class="row" style="justify-content:flex-end">
+          <button class="btn small primary" onclick="rowToken('${s.key}')">Colar token</button>
           ${s.kind==='generic'?`<button class="btn small" onclick="editSite('${s.key}')">Editar</button>`:''}
           <button class="btn small" onclick="testSupplier('${s.key}')">Testar</button>
           <button class="btn small danger" onclick="delSupplier('${s.key}')">Remover</button>
@@ -262,6 +263,16 @@ async function testSupplier(key){
   }catch(e){ el.innerHTML='<span class="err">'+e.message+'</span>'; }
 }
 async function delSupplier(key){ if(!confirm('Remover '+key+'?'))return; try{await api('/api/suppliers/'+key,{method:'DELETE'});renderSuppliers();}catch(e){} }
+async function rowToken(key){
+  const s = (SUPPLIERS.find(x=>x.key===key)||{});
+  const t = prompt('Cole o cookie/token de '+(s.name||key)+' (logado no site):');
+  if(t===null || !t.trim()) return;
+  try{
+    await api('/api/suppliers/'+key+'/token',{method:'POST',body:JSON.stringify({token:t.trim()})});
+    await renderSuppliers();          // atualiza o "token: salvo"
+    await testSupplier(key);          // e ja testa a sessao
+  }catch(e){ alert('Erro ao salvar token: '+e.message); }
+}
 
 // ---------- custom sites (generic, selector-based) ----------
 function collectSite(){
