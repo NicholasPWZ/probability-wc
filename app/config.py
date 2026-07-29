@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -11,6 +12,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # SAME regardless of the process working directory (gunicorn vs CLI wrote to different
 # .cache dirs when this was relative).
 _ROOT = Path(__file__).resolve().parent.parent
+
+# Camoufox stores its downloaded browser in the platformdirs user cache dir
+# (XDG_CACHE_HOME/camoufox). Pin it to the project .cache on Linux so `camoufox fetch`
+# and the running service (possibly different users/HOMEs) agree on the location — the
+# dir is owned by the service user. Avoids "CamoufoxNotInstalled" at runtime.
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("XDG_CACHE_HOME", str(_ROOT / ".cache"))
 
 # Load .env into os.environ so per-supplier login creds (<KEY>_USER / <KEY>_PASS) are
 # available for the auto-login (pydantic only reads the fixed fields below).
