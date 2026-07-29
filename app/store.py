@@ -160,6 +160,26 @@ def set_token(key: str, token: str) -> dict:
         return _public(row)
 
 
+def ensure_seed(seed: list[dict]) -> None:
+    """One-time seed of known suppliers (NO tokens) so a fresh install lists them ready
+    for a token. Runs once (guarded by a flag); never overwrites existing rows/tokens,
+    and user deletions stick."""
+    with _lock:
+        data = _load()
+        if data.get("seeded"):
+            return
+        rows = data.setdefault("suppliers", [])
+        existing = {r["key"] for r in rows}
+        for sd in seed:
+            if sd["key"] in existing:
+                continue
+            rows.append({"key": sd["key"], "kind": sd.get("kind", "builtin"),
+                         "name": sd.get("name"), "baseUrl": sd.get("baseUrl"),
+                         "config": sd.get("config"), "enabled": True, "token": "", "note": ""})
+        data["seeded"] = True
+        _save(data)
+
+
 def delete(key: str) -> None:
     with _lock:
         data = _load()

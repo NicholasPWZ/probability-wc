@@ -9,4 +9,33 @@ register(BraileAdapter())
 register(MockAdapter())
 register(MockAdapterB())
 
-__all__ = ["Product", "SupplierAdapter", "all_adapters", "get_adapter", "register"]
+# Known suppliers seeded on a fresh install (NO tokens — pasted per environment). Lets a
+# deploy list all suppliers ready-for-token instead of re-typing selector configs by hand.
+SEED = [
+    {"key": "pauta", "kind": "builtin", "name": "Pauta", "baseUrl": "https://pauta.com.br"},
+    {"key": "braile", "kind": "builtin", "name": "Braile Distribuidora",
+     "baseUrl": "https://www.brailedistribuidora.com.br"},
+    {"key": "mazer", "kind": "generic", "name": "Mazer", "baseUrl": "https://www.mazer.com.br",
+     "config": {"searchUrl": "https://www.mazer.com.br/busca?s={q}", "authMode": "cookie",
+                "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
+                "selectors": {"item": "li:has(.nome-produto-3linhas)", "name": ".nome-produto-3linhas",
+                              "price": "ins.novo-valor", "link": ".box-img-listagem a",
+                              "image": ".box-img-listagem img", "stock": ""}}},
+    {"key": "digimacro", "kind": "generic", "name": "Digimacro", "baseUrl": "https://digimacro.com.br",
+     "config": {"searchUrl": "https://digimacro.com.br/pesquisa?controller=search&s={q}",
+                "authMode": "cookie", "priceLocale": "br", "linkAttr": "href", "imageAttr": "content",
+                "selectors": {"item": "article.product-miniature", "name": ".product-title",
+                              "price": ".price", "link": ".product-title a",
+                              "image": ".product-thumbnail img", "stock": ""}}},
+    {"key": "multimarcas", "kind": "generic", "name": "Multimarcas Distribuidora",
+     "baseUrl": "https://www.multimarcasdistribuidora.com.br",
+     "config": {"searchUrl": "https://www.multimarcasdistribuidora.com.br/loja/busca.php?loja=1414368&palavra_busca={q}",
+                "authMode": "cookie", "priceLocale": "br", "linkAttr": "href", "imageAttr": "data-src",
+                "selectors": {"item": ".product", "name": ".product-name", "price": ".current-price",
+                              "link": ".product-info", "image": ".image img", "stock": ""}}},
+]
+
+from app import store as _store
+_store.ensure_seed(SEED)
+
+__all__ = ["Product", "SupplierAdapter", "all_adapters", "get_adapter", "register", "SEED"]
