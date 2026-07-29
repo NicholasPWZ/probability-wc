@@ -170,6 +170,15 @@ async function api(path, opts){
   return body;
 }
 function brl(v){ return v==null?'—':('R$ '+Number(v).toFixed(2).replace('.',',')); }
+let LAST = {};   // último resultado de teste/renovação por fornecedor (persiste na tela)
+function nowHM(){ return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+function fmtAgo(ts){ // ts em segundos (epoch)
+  const s = Math.max(0, Math.floor(Date.now()/1000 - ts));
+  if(s<60) return 'há '+s+'s';
+  if(s<3600) return 'há '+Math.floor(s/60)+'min';
+  if(s<86400) return 'há '+Math.floor(s/3600)+'h';
+  return 'há '+Math.floor(s/86400)+'d';
+}
 function hasRegions(p){ return (p.tiers||[]).some(t=>t.region); }
 // price cell: if a product has per-state (UF) tiers, show ALL of them (state · price · stock · ST)
 // each with its own "+" to add THAT state's price to the cart; otherwise a single price.
@@ -245,7 +254,9 @@ async function renderSuppliers(){
       SUPPLIERS.map(s=>`<tr>
         <td><b>${s.name||s.key}</b><div class="muted" style="font-size:12px">${s.baseUrl||''}</div></td>
         <td><span class="pill">${s.kind==='generic'?'site':'embutido'}</span></td>
-        <td>${s.hasToken?'<span class="pill ok">salvo</span>':'<span class="pill no">ausente</span>'} <span class="muted" id="test-${s.key}"></span></td>
+        <td>${s.hasToken?'<span class="pill ok">salvo</span>':'<span class="pill no">ausente</span>'}
+          ${s.tokenUpdated?`<div class="muted" style="font-size:11px">atualizado ${fmtAgo(s.tokenUpdated)}</div>`:''}
+          ${LAST[s.key]?`<div style="font-size:11px;margin-top:2px">${LAST[s.key]}</div>`:''}</td>
         <td><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSupplier('${s.key}',this.checked)" style="width:auto"></td>
         <td class="row" style="justify-content:flex-end">
           <button class="btn small primary" onclick="rowToken('${s.key}')">Colar token</button>
@@ -258,18 +269,22 @@ async function renderSuppliers(){
 }
 async function toggleSupplier(key,enabled){ try{ await api('/api/suppliers',{method:'PUT',body:JSON.stringify({key,enabled})}); }catch(e){} }
 async function reloginSupplier(key){
-  const el = $('#test-'+key); if(el) el.innerHTML='<span class="spin"></span> logando…';
+  LAST[key]='<span class="muted"><span class="spin"></span> logando…</span>'; await renderSuppliers();
   try{
     const r = await api('/api/suppliers/'+key+'/relogin',{method:'POST'});
-    if(el) el.innerHTML = r.ok? '<span class="pill ok">renovado</span>' : '<span class="pill no">falhou</span>';
-    renderSuppliers();
-  }catch(e){ if(el) el.innerHTML='<span class="err">'+e.message+'</span>'; }
+    LAST[key]= r.ok ? `<span class="pill ok">✓ renovado ${nowHM()}</span>`
+                    : `<span class="pill no">✗ falhou ${nowHM()}</span> <span class="muted">${r.detail||''}</span>`;
+  }catch(e){ LAST[key]='<span class="err">'+e.message+'</span>'; }
+  await renderSuppliers();
 }
 async function testSupplier(key){
-  const el = $('#test-'+key); el.innerHTML='<span class="spin"></span>';
-  try{ const r = await api('/api/suppliers/'+key+'/test',{method:'POST'});
-    el.innerHTML = r.authed? '<span class="pill ok">sessão ok</span>' : '<span class="pill no">expirada</span>';
-  }catch(e){ el.innerHTML='<span class="err">'+e.message+'</span>'; }
+  LAST[key]='<span class="muted"><span class="spin"></span> testando…</span>'; await renderSuppliers();
+  try{
+    const r = await api('/api/suppliers/'+key+'/test',{method:'POST'});
+    LAST[key]= r.authed ? `<span class="pill ok">sessão ok ${nowHM()}</span>`
+                        : `<span class="pill no">expirada ${nowHM()}</span> <span class="muted">${r.detail||''}</span>`;
+  }catch(e){ LAST[key]='<span class="err">'+e.message+'</span>'; }
+  await renderSuppliers();
 }
 async function delSupplier(key){ if(!confirm('Remover '+key+'?'))return; try{await api('/api/suppliers/'+key,{method:'DELETE'});renderSuppliers();}catch(e){} }
 async function rowToken(key){
