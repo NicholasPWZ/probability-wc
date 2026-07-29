@@ -271,14 +271,23 @@ def _search_one_safe(key: str, query: str) -> dict:
 # and re-capture any refreshed cookie (sliding sessions). Extends token life a lot.
 # --------------------------------------------------------------------------
 def _autologin_refresh(key: str) -> str | None:
-    """Re-mint a supplier session via Camoufox (uses .env credentials). Persists the token."""
+    """Re-mint a supplier session via Camoufox (uses .env credentials). Persists the token
+    ONLY if it actually authenticates (so a failed login's guest cookie isn't saved)."""
     from app import autologin
     if not (get_settings().autologin_enabled and autologin.can_autologin(key)):
         return None
     tok = autologin.login(key)
-    if tok:
-        store.set_token(key, tok)
-    return tok
+    if not tok:
+        return None
+    adapter = _resolve_adapter(key)
+    try:
+        if adapter and adapter.check_auth(adapter.build_session(tok)):
+            store.set_token(key, tok)
+            return tok
+    except Exception:
+        pass
+    print(f"[autologin] {key}: cookie obtido mas nao autenticou (login provavelmente falhou)")
+    return None
 
 
 def _keepalive_once() -> None:

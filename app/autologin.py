@@ -13,16 +13,29 @@ import threading
 
 from app.config import get_settings, supplier_credentials
 
-# Per-supplier login recipe. Add one entry per site whose login we automate.
+# Per-supplier login recipe. Keys: loginUrl, user, pw (CSS selectors); optional `reveal`
+# (selector to click first to show the form) and `submit` (button selector; if omitted,
+# presses Enter on the password field). `domain` filters the cookies to keep. The final
+# authority on success is the adapter's check_auth in the caller (a returned cookie is
+# validated before being persisted), so `success` here is just a best-effort hint.
 RECIPES: dict[str, dict] = {
     "digimacro": {
         "loginUrl": "https://digimacro.com.br/acesso",
-        "user": "input[name=email]",
-        "pw": "input[name=password]",
-        "submit": "#submit-login",
+        "user": "input[name=email]", "pw": "input[name=password]", "submit": "#submit-login",
         "domain": "digimacro.com.br",
-        # PrestaShop leaves /acesso once logged in
         "success": lambda page: "/acesso" not in (page.url or ""),
+    },
+    "pauta": {
+        "loginUrl": "https://pauta.com.br/login",
+        "user": "#Email", "pw": "#Password",     # nopCommerce; submit via Enter
+        "domain": "pauta.com.br",
+        "success": lambda page: "/login" not in (page.url or ""),
+    },
+    "mazer": {
+        "loginUrl": "https://www.mazer.com.br/",  # form fica visivel na home (contentLoginHome)
+        "user": "#username", "pw": "#password", "submit": "#enter",
+        "domain": "mazer.com.br",
+        "success": lambda page: True,
     },
 }
 
@@ -95,9 +108,17 @@ def _run_login(key, recipe, user, pwd, headless) -> str | None:
     with Camoufox(headless=headless) as browser:
         page = browser.new_page()
         page.goto(recipe["loginUrl"], wait_until="domcontentloaded", timeout=45000)
-        page.fill(recipe["user"], user)
-        page.fill(recipe["pw"], pwd)
-        page.click(recipe["submit"])
+        if recipe.get("reveal"):
+            try:
+                page.click(recipe["reveal"], timeout=8000)
+            except Exception:
+                pass
+        page.fill(recipe["user"], user, timeout=20000)
+        page.fill(recipe["pw"], pwd, timeout=20000)
+        if recipe.get("submit"):
+            page.click(recipe["submit"])
+        else:
+            page.press(recipe["pw"], "Enter")   # standard form submit
         try:
             page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
