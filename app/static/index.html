@@ -1,1069 +1,439 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Bet Stats — Copa do Mundo 2026</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Compubot — Comparador de Fornecedores</title>
 <style>
-  :root {
-    --bg:#0c0e12; --panel:#13161c; --panel2:#181c23; --elev:#1d222b;
-    --border:#252a33; --border2:#333a45;
-    --text:#e6e8ec; --muted:#878e99;
-    --accent:#5fa07a;     /* positive / value / accuracy */
-    --accent2:#5b8cff;    /* primary */
-    --accent3:#6f7bd6;    /* AI panel */
-    --warn:#c79a4a; --bad:#c66b66;
-    --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 16px rgba(0,0,0,.22);
-    --r:10px;
+  :root{
+    --bg:#0f1216; --panel:#171b21; --panel2:#1e242c; --line:#2a323c; --text:#e7ecf2;
+    --muted:#93a1b0; --accent:#3aa675; --accent2:#4da3ff; --bad:#e5555b; --warn:#e0a63a;
   }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;
-         background:var(--bg); color:var(--text); -webkit-text-size-adjust:100%; line-height:1.45; }
-  header { padding:14px 20px; border-bottom:1px solid var(--border); position:sticky; top:0;
-           background:rgba(12,14,18,.9); backdrop-filter:blur(8px); z-index:5; }
-  .brand { display:flex; align-items:center; gap:10px; }
-  .brand svg { color:var(--accent2); flex:0 0 auto; }
-  h1 { font-size:17px; margin:0; font-weight:650; letter-spacing:-.01em; color:var(--text); }
-  h1 .dim { color:var(--muted); font-weight:500; }
-  .sub { color:var(--muted); font-size:12.5px; margin-top:4px; }
-  nav { display:flex; gap:6px; margin-top:14px; }
-  nav button { flex:0 0 auto; border-radius:8px; color:var(--muted); background:transparent; border-color:transparent; }
-  nav button:hover:not(.active) { background:var(--panel2); color:var(--text); }
-  nav button.active { background:rgba(91,140,255,.12); color:var(--accent2); border-color:rgba(91,140,255,.32); font-weight:600; }
-  .settings { background:var(--panel); border:1px solid var(--accent2); border-radius:var(--r); padding:14px 16px; margin-bottom:16px; }
-  .settings h3 { margin:0 0 6px; font-size:14px; color:var(--accent2); }
-  .settings label { display:block; font-size:12px; color:var(--muted); margin-top:10px; }
-  .settings input { display:block; width:100%; max-width:420px; margin-top:4px; padding:8px 10px; font:inherit; font-size:13px;
-                    background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:7px; }
-  .settings input:focus { outline:none; border-color:var(--accent2); }
-  .cfg-actions { display:flex; align-items:center; gap:12px; margin-top:14px; }
-  main { max-width:1040px; margin:0 auto; padding:20px 16px 64px; }
-  .day { margin:22px 0 10px; font-size:11px; color:var(--muted); font-weight:650; text-transform:uppercase;
-         letter-spacing:.08em; display:flex; align-items:center; gap:12px; }
-  .day::after { content:""; flex:1; height:1px; background:var(--border); }
-  .match { background:var(--panel); border:1px solid var(--border); border-radius:var(--r); margin:8px 0;
-           overflow:hidden; transition:border-color .15s, box-shadow .15s; }
-  .match:hover { border-color:var(--border2); }
-  .match.open { border-color:var(--border2); box-shadow:var(--shadow); }
-  .match-head { display:flex; align-items:center; gap:12px; padding:13px 15px; cursor:pointer; }
-  .match-head:hover { background:var(--panel2); }
-  .time { font-variant-numeric:tabular-nums; color:var(--text); width:44px; font-size:13.5px; font-weight:600; flex:0 0 auto; }
-  .teams { flex:1; font-weight:550; min-width:0; font-size:14.5px; }
-  .group { color:var(--muted); font-size:12px; flex:0 0 auto; }
-  .status { font-size:11px; font-weight:600; padding:2px 8px; border-radius:6px; background:var(--panel2);
-            color:var(--muted); border:1px solid var(--border); flex:0 0 auto; }
-  .status:not(:empty) { color:var(--text); }
-  .status.live { color:var(--bad); border-color:rgba(198,107,102,.4); }
-  .chev { color:var(--muted); transition:transform .15s; flex:0 0 auto; display:inline-flex; }
-  .match.open .chev { transform:rotate(90deg); color:var(--text); }
-  .detail { display:none; padding:2px 15px 16px; border-top:1px solid var(--border); }
-  .match.open .detail { display:block; }
-  .subtabs { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 12px; padding-bottom:10px; border-bottom:1px solid var(--border); }
-  .subtabs button { font-size:12.5px; padding:6px 11px; border-radius:7px; color:var(--muted); background:transparent; border-color:transparent; }
-  .subtabs button:hover:not(.active) { background:var(--panel2); color:var(--text); }
-  .subtabs button.active { background:rgba(91,140,255,.12); color:var(--accent2); border-color:rgba(91,140,255,.3); font-weight:600; }
-  .seclabel { margin:12px 0 5px; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-weight:650; }
-  .preds h3 + .seclabel { margin-top:2px; }
-  .toolbar { display:flex; gap:7px; align-items:center; flex-wrap:wrap; padding:12px 0; }
-  button { font:inherit; font-size:13px; border:1px solid var(--border); background:var(--panel2); color:var(--text);
-           padding:7px 12px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
-           transition:border-color .15s, background .15s, color .15s; }
-  button:hover:not(:disabled) { border-color:var(--border2); background:var(--elev); }
-  button:disabled { opacity:.4; cursor:default; }
-  button svg, nav button svg { width:14px; height:14px; flex:0 0 auto; }
-  button.primary { background:var(--accent2); color:#0b1020; border-color:var(--accent2); font-weight:600; }
-  button.primary:hover:not(:disabled) { background:#719cff; border-color:#719cff; }
-  .badge { font-size:11px; font-weight:600; padding:2px 9px; border-radius:6px; border:1px solid var(--border); }
-  .badge.ok { color:var(--accent); border-color:rgba(95,160,122,.4); }
-  .badge.prov { color:var(--warn); border-color:rgba(199,154,74,.4); }
-  .pill { font-size:11px; padding:3px 9px; border-radius:6px; border:1px solid var(--border); color:var(--muted); background:var(--panel); }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:12px; }
-  .card { background:var(--panel); border:1px solid var(--border); border-radius:var(--r); padding:14px 15px; }
-  .card h3 { margin:0 0 11px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em;
-             font-weight:650; padding-bottom:9px; border-bottom:1px solid var(--border); }
-  .scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th,td { text-align:left; padding:6px 7px; border-bottom:1px solid var(--border); white-space:nowrap; }
-  tr:last-child td { border-bottom:none; }
-  table tr:hover td { background:var(--panel2); }
-  th { color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; }
-  td.p, th.p { text-align:right; font-variant-numeric:tabular-nums; }
-  .three { display:flex; gap:8px; flex-wrap:wrap; }
-  .three div { flex:1 1 0; min-width:74px; text-align:center; background:var(--panel2); border:1px solid var(--border);
-               border-radius:8px; padding:11px 6px; }
-  .three .v { font-size:18px; font-weight:700; letter-spacing:-.01em; }
-  .three .l { font-size:10.5px; color:var(--muted); margin-top:3px; }
-  .pbar { display:flex; height:6px; border-radius:4px; overflow:hidden; margin:11px 0 4px; background:var(--panel2); }
-  .pbar i { display:block; height:100%; }
-  .conf-low { color:var(--bad)!important; } .conf-medium { color:var(--warn)!important; } .conf-high { color:var(--accent)!important; }
-  .muted { color:var(--muted); font-size:12px; }
-  .err { color:var(--bad); font-size:13px; }
-  .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--border2); border-top-color:var(--accent2);
-          border-radius:50%; animation:s .7s linear infinite; vertical-align:-2px; }
-  @keyframes s { to { transform:rotate(360deg); } }
-  .ml { font-size:12px; margin:3px 0; }
-  .ml .mlk { color:var(--muted); }
-  .ml b { color:var(--text); font-weight:600; }
-  .mlbox { margin-top:11px; padding-top:9px; border-top:1px solid var(--border); }
-  .mlbox .h { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
-  /* flat side-accented info panels */
-  .preds, .gemini, .gpanel, .ref { background:var(--panel); border:1px solid var(--border); border-radius:var(--r);
-            padding:13px 15px; margin-top:12px; border-left:2px solid var(--border2); }
-  .preds { border-left-color:var(--accent2); }
-  .gemini { border-left-color:var(--accent); }
-  .gpanel { border-left-color:var(--accent3); }
-  .preds h3, .gemini h3, .gpanel h3 { margin:0 0 10px; font-size:13px; font-weight:600;
-            display:flex; align-items:center; gap:7px; }
-  .preds h3 { color:var(--text); } .gemini h3 { color:var(--accent); } .gpanel h3 { color:var(--accent3); }
-  .preds h3 svg, .gpanel h3 svg { color:var(--accent2); } .gpanel h3 svg { color:var(--accent3); }
-  .preds td b { color:var(--text); }
-  .gemini li, .gpanel li { margin:4px 0; }
-  .ref { font-size:13px; display:flex; align-items:center; gap:8px; border-left-color:var(--warn); }
-  .ref svg { color:var(--warn); flex:0 0 auto; }
-  .gsec-h { font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.06em;
-            margin:14px 0 7px; padding-top:10px; border-top:1px dashed var(--border); }
-  .gsec-h:first-child { border-top:none; padding-top:0; margin-top:2px; }
-  .gres { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:9px; }
-  .gres .gh { font-size:10.5px; font-weight:650; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
-  .oddin { width:58px; padding:5px 7px; border:1px solid var(--border); background:var(--bg); color:var(--text);
-           border-radius:6px; font:inherit; font-size:12px; }
-  .oddin:focus { outline:none; border-color:var(--accent2); }
-  .oddcell { white-space:nowrap; }
-  .valout { margin-left:7px; font-size:12px; }
-  ::selection { background:rgba(91,140,255,.25); }
-  .scroll::-webkit-scrollbar { height:8px; width:8px; }
-  .scroll::-webkit-scrollbar-thumb { background:var(--border2); border-radius:8px; }
-  details.players summary { cursor:pointer; color:var(--accent2); font-size:13px; margin-top:8px; font-weight:550; }
-  @media (max-width:640px) {
-    header { padding:12px 14px; }
-    main { padding:14px 11px 50px; }
-    .grid { grid-template-columns:1fr; }
-    .group { display:none; }
-    .match-head { gap:9px; padding:12px; }
-    .teams { font-size:14px; }
-    table { font-size:12px; }
-    th,td { padding:5px 6px; }
-    .three .v { font-size:16px; }
-    nav { overflow-x:auto; }
-    /* responsive tables -> stacked cards (no horizontal scroll) */
-    .scroll:has(table.rwd) { overflow-x:visible; }
-    table.rwd, table.rwd tbody, table.rwd tr, table.rwd td { display:block; width:100%; }
-    table.rwd tr.hr { display:none; }                     /* hide header row */
-    table.rwd tr { border:1px solid var(--border); border-radius:9px; margin:0 0 8px; padding:9px 11px; background:var(--panel2); }
-    table.rwd tr:hover td { background:transparent; }
-    table.rwd td { border:none; padding:4px 0 4px 40%; white-space:normal; text-align:right; position:relative; min-height:24px; }
-    table.rwd td::before { content:attr(data-label); position:absolute; left:0; top:5px; width:36%; color:var(--muted);
-                   font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:.04em; text-align:left; }
-    table.rwd td.t { padding:0 0 7px; text-align:left; font-weight:600; font-size:14px; margin-bottom:6px;
-                   border-bottom:1px solid var(--border); }
-    table.rwd td.t::before { content:none; }
-    table.rwd td .muted { font-size:11px; }
-  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+  a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;font-weight:650}
+  header .dim{color:var(--muted);font-weight:400}
+  nav{display:flex;gap:6px;margin-left:8px}
+  nav button,.btn{background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:7px 13px;border-radius:8px;cursor:pointer;font-size:14px}
+  nav button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.small{padding:5px 10px;font-size:13px}
+  .btn.danger{border-color:#5a2a2c;color:#f2a3a6}
+  .btn:hover{filter:brightness(1.08)}
+  main{max-width:1000px;margin:0 auto;padding:18px}
+  .muted{color:var(--muted)} .err{color:var(--bad)} .warn{color:var(--warn)}
+  input,textarea,select{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;font-size:14px;width:100%}
+  textarea{min-height:74px;font-family:ui-monospace,monospace;font-size:12px}
+  label{display:block;margin:10px 0 4px;color:var(--muted);font-size:13px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  /* login */
+  #login{max-width:360px;margin:12vh auto;text-align:center}
+  #login .card{padding:24px}
+  /* search results */
+  .sup-head{display:flex;align-items:baseline;gap:10px;margin:18px 0 8px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .sup-head h2{font-size:16px;margin:0}
+  .prod{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+  .prod:last-child{border-bottom:0}
+  .prod img{width:52px;height:52px;object-fit:contain;background:#fff;border-radius:7px;flex:none}
+  .prod .info{flex:1;min-width:0}
+  .prod .name{font-weight:550;overflow:hidden;text-overflow:ellipsis}
+  .prod .meta{color:var(--muted);font-size:12.5px}
+  .prod .price{font-size:17px;font-weight:700;color:var(--accent);white-space:nowrap;text-align:right}
+  .prod .price small{display:block;color:var(--muted);font-weight:400;font-size:11px}
+  .pill{font-size:11px;padding:2px 7px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+  .pill.ok{color:#9fe0c2;border-color:#2c5a48} .pill.no{color:#f2a3a6;border-color:#5a2a2c}
+  table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);font-size:14px}
+  th{color:var(--muted);font-weight:500}
+  .hidden{display:none}
+  .searchbar{display:flex;gap:10px} .searchbar input{font-size:16px;padding:12px 14px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
+  @media(max-width:620px){.grid2{grid-template-columns:1fr}}
+  .grid2 label{margin:6px 0 3px}
+  .thumb{width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;flex:none}
+  td .btn.small{padding:4px 10px}
+  .badge{background:var(--accent);color:#fff;border-radius:20px;padding:0 6px;font-size:11px;margin-left:2px;display:none}
+  .badge.show{display:inline-block}
+  td input{padding:5px 7px;width:70px} .tot{font-size:16px;font-weight:700;color:var(--accent)}
+  .btn.tiny{padding:1px 7px;font-size:12px;line-height:1.4;margin-left:4px}
+  .tier-line{white-space:nowrap;padding:1px 0}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand"><span id="brand-mark"></span><h1>Bet Stats <span class="dim">· Copa do Mundo 2026</span></h1></div>
-  <div class="sub">Probabilidades calculadas a partir de dados de desempenho. Horários no fuso de Brasília.</div>
-  <nav>
-    <button id="nav-best" onclick="showView('best')"></button>
-    <button id="nav-matches" class="active" onclick="showView('matches')"></button>
-    <button id="nav-finished" onclick="showView('finished')"></button>
-    <button id="nav-dash" onclick="showView('dashboard')"></button>
-    <button id="nav-cfg" onclick="toggleSettings()" title="Configurar IA" style="margin-left:auto"></button>
-  </nav>
-</header>
-<main>
-  <div id="settings" class="settings" style="display:none">
-    <h3 id="cfg-h3"></h3>
-    <p id="cfg-status" class="muted"></p>
-    <label>Token de admin<input id="cfg-token" type="password" autocomplete="off"></label>
-    <label>Chave do Gemini (deixe vazio p/ manter)<input id="cfg-key" type="password" autocomplete="off"></label>
-    <label>Modelo<input id="cfg-model" type="text" placeholder="gemini-2.5-flash"></label>
-    <div class="cfg-actions"><button class="primary" onclick="saveGemini()">Salvar</button><span id="cfg-msg" class="muted"></span></div>
+
+<div id="login" class="hidden">
+  <div class="card">
+    <h1 style="margin:0 0 4px">Compubot</h1>
+    <p class="muted" style="margin:0 0 16px">Comparador de preços de fornecedores</p>
+    <input id="pw" type="password" placeholder="Senha" onkeydown="if(event.key==='Enter')doLogin()" />
+    <button class="btn primary" style="width:100%;margin-top:12px" onclick="doLogin()">Entrar</button>
+    <p id="login-msg" class="err" style="min-height:18px;margin:10px 0 0"></p>
   </div>
-  <div id="view-best" style="display:none"></div>
-  <div id="view-matches"><p class="muted"><span class="spin"></span> Carregando jogos…</p></div>
-  <div id="view-finished" style="display:none"></div>
-  <div id="view-dashboard" style="display:none"></div>
-</main>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>Compubot <span class="dim">· fornecedores</span></h1>
+    <nav>
+      <button id="nav-search" class="active" onclick="showView('search')">Buscar</button>
+      <button id="nav-cart" onclick="showView('cart')">Carrinho <span id="cart-badge" class="badge"></span></button>
+      <button id="nav-suppliers" onclick="showView('suppliers')">Fornecedores</button>
+    </nav>
+    <button class="btn small" style="margin-left:auto" onclick="doLogout()">Sair</button>
+  </header>
+  <main>
+    <div id="view-search">
+      <div class="searchbar">
+        <input id="q" placeholder="Buscar produto (ex.: garrafa tinta epson)" onkeydown="if(event.key==='Enter')doSearch()" />
+        <button class="btn primary" onclick="doSearch()">Buscar</button>
+      </div>
+      <div id="results" style="margin-top:16px"></div>
+    </div>
+
+    <div id="view-cart" class="hidden">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;gap:12px">
+          <div class="row"><label style="margin:0">Margem padrão (%)</label>
+            <input id="cart-markup" type="number" step="1" value="30" style="width:90px" oninput="renderCart()"></div>
+          <div class="row">
+            <button class="btn small" onclick="copyQuote()">Copiar orçamento</button>
+            <button class="btn small danger" onclick="clearCart()">Limpar carrinho</button>
+          </div>
+        </div>
+        <p class="muted" style="font-size:12.5px;margin:8px 0 0">Adicione produtos pela busca. A margem por item (se preenchida) sobrepõe a padrão. Custo e quantidade são editáveis. Salvo neste navegador.</p>
+      </div>
+      <div id="cart-body"></div>
+    </div>
+
+    <div id="view-suppliers" class="hidden">
+      <div class="card">
+        <h2 style="margin:0 0 6px;font-size:16px">Adicionar / atualizar fornecedor</h2>
+        <label>Fornecedor</label>
+        <select id="adapter-select" onchange="onAdapterChange()"></select>
+        <p id="adapter-help" class="muted" style="font-size:12.5px"></p>
+        <label>Token de autenticação (cole aqui)</label>
+        <textarea id="token-input" placeholder="cole o cookie/token do fornecedor logado"></textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary" onclick="saveToken()">Salvar token</button>
+          <span id="token-msg" class="muted"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2 style="margin:0 0 4px;font-size:16px">Criar / editar site (por seletores) <span class="muted" style="font-weight:400;font-size:12px">— sem programar</span></h2>
+        <p class="muted" style="font-size:12.5px;margin:0 0 8px">Configure qualquer loja informando a URL de busca e os seletores CSS do nome e do preço. Use "Testar" para ajustar antes de salvar.</p>
+        <div class="grid2">
+          <div><label>Identificador (id)</label><input id="s-key" placeholder="ex.: kabum"></div>
+          <div><label>Nome</label><input id="s-name" placeholder="ex.: Kabum"></div>
+          <div><label>URL base</label><input id="s-base" placeholder="https://www.loja.com.br"></div>
+          <div><label>URL de busca (use {q})</label><input id="s-search" placeholder="https://www.loja.com.br/busca?q={q}"></div>
+          <div><label>Autenticação</label><select id="s-auth"><option value="cookie">Cookie (colar header cookie)</option><option value="header">Header (Nome: valor)</option><option value="none">Nenhuma (site público)</option></select></div>
+          <div><label>Formato de preço</label><select id="s-locale"><option value="br">BR (1.234,56)</option><option value="us">US (1,234.56)</option></select></div>
+        </div>
+        <label>Token / cookie de autenticação (deixe vazio p/ manter)</label>
+        <textarea id="s-token" placeholder="cole o header 'cookie' inteiro (modo cookie) ou linhas 'Nome: valor' (modo header)"></textarea>
+        <h3 style="font-size:13px;color:var(--muted);margin:12px 0 4px">Seletores CSS</h3>
+        <div class="grid2">
+          <div><label>Item (container de cada produto) *</label><input id="sel-item" placeholder="ex.: .product-item, li.produto"></div>
+          <div><label>Nome *</label><input id="sel-name" placeholder="ex.: .product-title, h2 a"></div>
+          <div><label>Preço *</label><input id="sel-price" placeholder="ex.: .price, span.preco"></div>
+          <div><label>Link (âncora)</label><input id="sel-link" placeholder="ex.: a.product-link (padrão: 1º <a>)"></div>
+          <div><label>Imagem</label><input id="sel-image" placeholder="ex.: img (padrão: 1ª <img>)"></div>
+          <div><label>Estoque (opcional)</label><input id="sel-stock" placeholder="ex.: .availability"></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <input id="s-q" placeholder="termo de teste (ex.: placa de video)" style="max-width:260px">
+          <button class="btn" onclick="testSite()">Testar seletores</button>
+          <button class="btn primary" onclick="saveSite()">Salvar site</button>
+          <button class="btn small" onclick="clearSiteForm()">Limpar</button>
+          <span id="site-msg" class="muted"></span>
+        </div>
+        <div id="site-test" style="margin-top:12px"></div>
+      </div>
+      <div class="card">
+        <h2 style="margin:0 0 10px;font-size:16px">Fornecedores configurados</h2>
+        <div id="suppliers-list"><p class="muted">Carregando…</p></div>
+      </div>
+    </div>
+  </main>
+</div>
 
 <script>
-const BASE = "";
-const pct = p => (p == null ? "–" : (p * 100).toFixed(1) + "%");
-// heat color: muted red (low) -> neutral (~50%) -> muted green (high) — desaturated for a sober look
-function pColor(p) {
-  if (p == null) return "var(--muted)";
-  const hue = Math.max(0, Math.min(1, p)) * 135;       // 0=red .. 135=green
-  return `hsl(${hue.toFixed(0)},42%,62%)`;
+const $ = s => document.querySelector(s);
+async function api(path, opts){
+  const r = await fetch(path, Object.assign({headers:{'content-type':'application/json'}}, opts||{}));
+  let body=null; try{ body=await r.json() }catch(e){}
+  if(!r.ok) throw new Error((body&&body.detail)||('HTTP '+r.status));
+  return body;
 }
-
-// minimal monochrome line icons (inherit currentColor)
-const _svg = d => `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-2px">${d}</svg>`;
-const ICON = {
-  logo: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 15v-3M12 15V9M16 15v-4"/></svg>`,
-  star: _svg('<path d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.3-4.8-2.5-4.8 2.5.9-5.3L4.2 9.7l5.4-.8z"/>'),
-  calendar: _svg('<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>'),
-  check: _svg('<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.3l2.4 2.4 4.6-5"/>'),
-  chart: _svg('<path d="M4 20h16"/><path d="M7 20v-6M12 20V7M17 20v-9"/>'),
-  target: _svg('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/>'),
-  spark: _svg('<path d="M12 3l1.7 4.8L18.5 9l-4.8 1.7L12 15l-1.7-4.3L5.5 9l4.8-1.2z"/><path d="M18 15l.7 2 .. "/>'),
-  flag: _svg('<path d="M5.5 21V4M5.5 4.5h11l-2 3.3 2 3.2h-11"/>'),
-  user: _svg('<circle cx="12" cy="8" r="3.6"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>'),
-  layers: _svg('<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>'),
-  refresh: _svg('<path d="M20 11a8 8 0 1 0-.6 3.5"/><path d="M20 5v5h-5"/>'),
-  clock: _svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3.2 1.9"/>'),
-  shield: _svg('<path d="M12 3.5l7 2.5v5c0 4.4-3 7.7-7 8.9-4-1.2-7-4.5-7-8.9V6z"/>'),
-};
-ICON.spark = _svg('<path d="M12 3l1.8 5L19 9.8l-5.2 1.8L12 17l-1.8-5.4L5 9.8 10.2 8z"/>');
-ICON.copy = _svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5"/>');
-ICON.gear = _svg('<circle cx="12" cy="12" r="3.2"/><path d="M12 3.2v2M12 18.8v2M3.2 12h2M18.8 12h2M5.9 5.9l1.5 1.5M16.6 16.6l1.5 1.5M18.1 5.9l-1.5 1.5M7.4 16.6l-1.5 1.5"/>');
-
-// inject brand mark + nav icons (DOM is ready: script is at end of body)
-(function iconizeChrome() {
-  const bm = document.getElementById("brand-mark"); if (bm) bm.innerHTML = ICON.logo;
-  const set = (id, ic, lab) => { const b = document.getElementById(id); if (b) b.innerHTML = ic + "<span>" + lab + "</span>"; };
-  set("nav-best", ICON.star, "Melhores palpites");
-  set("nav-matches", ICON.calendar, "Próximos jogos");
-  set("nav-finished", ICON.check, "Finalizados");
-  set("nav-dash", ICON.chart, "Desempenho");
-  const cfg = document.getElementById("nav-cfg"); if (cfg) cfg.innerHTML = ICON.gear + "<span>IA</span>";
-})();
-
-let CONFIG = {};
-function toggleSettings() {
-  const s = document.getElementById("settings");
-  const showing = s.style.display === "none";
-  s.style.display = showing ? "" : "none";
-  if (showing) {
-    document.getElementById("cfg-h3").textContent = "Configurar IA (Gemini)";
-    document.getElementById("cfg-model").value = CONFIG.geminiModel || "";
-    const st = document.getElementById("cfg-status");
-    const keyState = CONFIG.geminiEnabled ? "chave definida ✓" : "chave não definida";
-    st.innerHTML = CONFIG.adminConfigured
-      ? `Estado: ${keyState}. Informe o token de admin para alterar.`
-      : `Estado: ${keyState}. ⚠ Edição pela UI desativada — defina <b>ADMIN_TOKEN</b> no .env do servidor para habilitar.`;
-    document.getElementById("cfg-msg").textContent = "";
+function brl(v){ return v==null?'—':('R$ '+Number(v).toFixed(2).replace('.',',')); }
+function hasRegions(p){ return (p.tiers||[]).some(t=>t.region); }
+// price cell: if a product has per-state (UF) tiers, show ALL of them (state · price · stock · ST)
+// each with its own "+" to add THAT state's price to the cart; otherwise a single price.
+// Sorting still uses the product's cheapest (p.price).
+function priceCell(p, i){
+  const tiers=(p.tiers||[]).map((t,oi)=>({...t,_oi:oi})).filter(t=>t.price!=null);
+  if(hasRegions(p)){
+    return tiers.sort((a,b)=>(a.price||0)-(b.price||0)).map(t=>
+      `<div class="tier-line">${t.region?`<span class="muted">${t.region}</span> `:''}`
+      +`<b style="color:var(--accent)">${brl(t.price)}</b>`
+      +`${t.qty!=null?` <span class="muted">${t.qty}un</span>`:''}`
+      +`${t.extra?` <span class="warn">+ST ${brl(t.extra)}</span>`:''}`
+      +` <button class="btn tiny" title="Adicionar este estado ao carrinho" onclick="addToCart(${i},${t._oi})">+</button></div>`).join('');
   }
+  return `<b style="color:var(--accent)">${brl(p.price)}</b>`;
 }
 
-async function saveGemini() {
-  const msg = document.getElementById("cfg-msg");
-  msg.textContent = "Salvando…";
-  const body = {
-    token: document.getElementById("cfg-token").value,
-    apiKey: document.getElementById("cfg-key").value,
-    model: document.getElementById("cfg-model").value,
+// ---------- auth ----------
+async function boot(){
+  try{
+    const c = await api('/api/config');
+    if(c.authed){ enterApp(); }
+    else { $('#login').classList.remove('hidden'); if(!c.appConfigured) $('#login-msg').textContent='Defina APP_PASSWORD no servidor.'; }
+  }catch(e){ $('#login').classList.remove('hidden'); }
+}
+async function doLogin(){
+  $('#login-msg').textContent='';
+  try{ await api('/api/login',{method:'POST',body:JSON.stringify({password:$('#pw').value})}); enterApp(); }
+  catch(e){ $('#login-msg').textContent=e.message; }
+}
+async function doLogout(){ try{await api('/api/logout',{method:'POST'})}catch(e){} location.reload(); }
+function enterApp(){ $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); loadSuppliersMeta(); loadCart(); }
+
+// ---------- views ----------
+function showView(v){
+  for(const n of ['search','cart','suppliers']){
+    $('#view-'+n).classList.toggle('hidden', n!==v);
+    $('#nav-'+n).classList.toggle('active', n===v);
+  }
+  if(v==='suppliers') renderSuppliers();
+  if(v==='cart') renderCart();
+}
+
+// ---------- suppliers ----------
+let ADAPTERS = [];
+async function loadSuppliersMeta(){
+  try{ ADAPTERS = (await api('/api/adapters')).adapters; }catch(e){ ADAPTERS=[]; }
+  const sel = $('#adapter-select');
+  sel.innerHTML = ADAPTERS.map(a=>`<option value="${a.key}">${a.name} (${a.baseUrl})</option>`).join('');
+  onAdapterChange();
+}
+function onAdapterChange(){
+  const a = ADAPTERS.find(x=>x.key===$('#adapter-select').value);
+  $('#adapter-help').textContent = a? a.authHelp : '';
+}
+async function saveToken(){
+  const key = $('#adapter-select').value, token = $('#token-input').value.trim();
+  if(!token){ $('#token-msg').textContent='Cole um token.'; return; }
+  $('#token-msg').textContent='Salvando…';
+  try{
+    await api('/api/suppliers/'+key+'/token',{method:'POST',body:JSON.stringify({token})});
+    $('#token-input').value=''; $('#token-msg').textContent='Salvo ✓'; renderSuppliers();
+    setTimeout(()=>$('#token-msg').textContent='',2500);
+  }catch(e){ $('#token-msg').textContent='Erro: '+e.message; }
+}
+let SUPPLIERS = [];
+async function renderSuppliers(){
+  const box = $('#suppliers-list');
+  try{
+    SUPPLIERS = (await api('/api/suppliers')).suppliers;
+    if(!SUPPLIERS.length){ box.innerHTML='<p class="muted">Nenhum fornecedor ainda. Adicione um acima.</p>'; return; }
+    box.innerHTML = '<div class="scroll"><table><tr><th>Fornecedor</th><th>Tipo</th><th>Token</th><th>Ativo</th><th></th></tr>' +
+      SUPPLIERS.map(s=>`<tr>
+        <td><b>${s.name||s.key}</b><div class="muted" style="font-size:12px">${s.baseUrl||''}</div></td>
+        <td><span class="pill">${s.kind==='generic'?'site':'embutido'}</span></td>
+        <td>${s.hasToken?'<span class="pill ok">salvo</span>':'<span class="pill no">ausente</span>'} <span class="muted" id="test-${s.key}"></span></td>
+        <td><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSupplier('${s.key}',this.checked)" style="width:auto"></td>
+        <td class="row" style="justify-content:flex-end">
+          ${s.kind==='generic'?`<button class="btn small" onclick="editSite('${s.key}')">Editar</button>`:''}
+          <button class="btn small" onclick="testSupplier('${s.key}')">Testar</button>
+          <button class="btn small danger" onclick="delSupplier('${s.key}')">Remover</button>
+        </td></tr>`).join('') + '</table></div>';
+  }catch(e){ box.innerHTML='<p class="err">'+e.message+'</p>'; }
+}
+async function toggleSupplier(key,enabled){ try{ await api('/api/suppliers',{method:'PUT',body:JSON.stringify({key,enabled})}); }catch(e){} }
+async function testSupplier(key){
+  const el = $('#test-'+key); el.innerHTML='<span class="spin"></span>';
+  try{ const r = await api('/api/suppliers/'+key+'/test',{method:'POST'});
+    el.innerHTML = r.authed? '<span class="pill ok">sessão ok</span>' : '<span class="pill no">expirada</span>';
+  }catch(e){ el.innerHTML='<span class="err">'+e.message+'</span>'; }
+}
+async function delSupplier(key){ if(!confirm('Remover '+key+'?'))return; try{await api('/api/suppliers/'+key,{method:'DELETE'});renderSuppliers();}catch(e){} }
+
+// ---------- custom sites (generic, selector-based) ----------
+function collectSite(){
+  return {
+    key: $('#s-key').value.trim(), name: $('#s-name').value.trim(),
+    baseUrl: $('#s-base').value.trim(), searchUrl: $('#s-search').value.trim(),
+    authMode: $('#s-auth').value, priceLocale: $('#s-locale').value,
+    token: $('#s-token').value.trim() || null,
+    linkAttr:'href', imageAttr:'src',
+    selectors:{ item:$('#sel-item').value.trim(), name:$('#sel-name').value.trim(),
+      price:$('#sel-price').value.trim(), link:$('#sel-link').value.trim(),
+      image:$('#sel-image').value.trim(), stock:$('#sel-stock').value.trim() },
   };
-  try {
-    const r = await api("/api/settings/gemini", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    CONFIG.geminiEnabled = r.geminiEnabled; CONFIG.geminiModel = r.geminiModel; GEMINI_ENABLED = r.geminiEnabled;
-    document.getElementById("cfg-key").value = "";
-    document.getElementById("cfg-token").value = "";
-    msg.innerHTML = '<span style="color:var(--accent)">Salvo ✓ (chave ' + (r.geminiEnabled ? "ativa" : "vazia") + ')</span>';
-  } catch (e) {
-    msg.innerHTML = '<span style="color:var(--bad)">' + e.message + '</span>';
-  }
 }
-// colored probability cell text
-const pc = p => p == null ? '<span class="muted">–</span>'
-  : `<span style="color:${pColor(p)};font-weight:600">${(p * 100).toFixed(1)}%</span>`;
-const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; };
-const chk = c => c == null ? '<span class="muted">–</span>' : (c ? '<span style="color:var(--accent)">✓</span>' : '<span style="color:var(--bad)">✗</span>');
-let GEMINI_ENABLED = false;
-
-async function api(path, opts) {
-  const r = await fetch(BASE + path, opts);
-  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || ("HTTP " + r.status)); }
-  return r.json();
+function clearSiteForm(){
+  for(const id of ['s-key','s-name','s-base','s-search','s-token','s-q','sel-item','sel-name','sel-price','sel-link','sel-image','sel-stock']) $('#'+id).value='';
+  $('#s-auth').value='cookie'; $('#s-locale').value='br'; $('#site-test').innerHTML=''; $('#site-msg').textContent='';
 }
-
-function showView(v) {
-  for (const [id, name] of [["view-best","best"],["view-matches","matches"],["view-finished","finished"],["view-dashboard","dashboard"]])
-    document.getElementById(id).style.display = v === name ? "" : "none";
-  for (const [id, name] of [["nav-best","best"],["nav-matches","matches"],["nav-finished","finished"],["nav-dash","dashboard"]])
-    document.getElementById(id).classList.toggle("active", v === name);
-  if (v === "dashboard") loadDashboard();
-  if (v === "finished") renderFinished();
-  if (v === "best") loadBestBets();
+async function testSite(){
+  const body = collectSite(); body.query = $('#s-q').value.trim() || 'teste';
+  if(!body.searchUrl || !body.selectors.item){ $('#site-msg').textContent='Preencha URL de busca e o seletor do item.'; return; }
+  $('#site-test').innerHTML='<p class="muted"><span class="spin"></span> Testando…</p>';
+  try{
+    const r = await api('/api/sites/test',{method:'POST',body:JSON.stringify(body)});
+    if(!r.count){ $('#site-test').innerHTML='<p class="warn">0 itens. Ajuste o seletor do item (ou a URL de busca / autenticação).</p>'; return; }
+    $('#site-test').innerHTML = `<p class="muted">${r.count} itens · ${r.priced} com preço (mostrando ${Math.min(15,r.count)})</p>`+
+      '<div class="scroll"><table><tr><th>Nome</th><th>Preço</th><th>Link</th></tr>'+
+      r.products.map(p=>`<tr><td>${p.name||''}</td><td>${p.price_text||(p.price==null?'<span class="warn">—</span>':p.price)}</td><td>${p.url?`<a href="${p.url}" target="_blank">abrir</a>`:''}</td></tr>`).join('')+'</table></div>';
+  }catch(e){ $('#site-test').innerHTML='<p class="err">'+e.message+'</p>'; }
 }
-
-// value/EV: any odds input recomputes its result cell (event delegation)
-document.addEventListener("input", e => {
-  if (!e.target.classList || !e.target.classList.contains("oddin")) return;
-  const prob = parseFloat(e.target.dataset.prob);
-  const out = e.target.nextElementSibling;
-  const odd = parseFloat((e.target.value || "").replace(",", "."));
-  if (!odd || odd <= 1 || isNaN(prob)) { out.innerHTML = ""; return; }
-  const implied = 1 / odd, edge = prob - implied, ev = prob * (odd - 1) - (1 - prob);
-  if (edge > 0)
-    out.innerHTML = `<b style="color:var(--accent)">VALOR +${(edge*100).toFixed(1)}%</b> <span class="muted">EV ${ev>=0?"+":""}${ev.toFixed(2)}</span>`;
-  else
-    out.innerHTML = `<span class="muted">sem valor (${(edge*100).toFixed(1)}%)</span>`;
-});
-
-let RELIABILITY = null;
-function relBadge(cat) {
-  const r = RELIABILITY && RELIABILITY[cat];
-  if (!r || r.rate == null) return '<span class="muted">–</span>';
-  return `<span title="${r.hits}/${r.total} acertos em jogos passados">${pc(r.rate)}</span>`;
+async function saveSite(){
+  const body = collectSite();
+  if(!body.name && !body.key){ $('#site-msg').textContent='Informe um nome.'; return; }
+  if(!body.searchUrl || !body.selectors.item || !body.selectors.name || !body.selectors.price){ $('#site-msg').textContent='Preencha URL de busca e os seletores de item, nome e preço.'; return; }
+  $('#site-msg').textContent='Salvando…';
+  try{ await api('/api/sites',{method:'POST',body:JSON.stringify(body)});
+    $('#site-msg').textContent='Salvo ✓'; renderSuppliers(); setTimeout(()=>$('#site-msg').textContent='',2500);
+  }catch(e){ $('#site-msg').textContent='Erro: '+e.message; }
 }
-const oddInput = prob => `<input class="oddin" data-prob="${prob}" placeholder="odd" inputmode="decimal"><span class="valout"></span>`;
-
-// ---------- matches ----------
-let DAYS = [];
-let finishedRendered = false;
-
-async function boot() {
-  try { CONFIG = await api("/api/config"); GEMINI_ENABLED = CONFIG.geminiEnabled; } catch {}
-  const root = document.getElementById("view-matches");
-  try {
-    const { days } = await api("/api/matches");
-    DAYS = days;
-    renderMatchList(root, m => m.statusType !== "finished",
-                    "Nenhum jogo futuro — veja a aba Finalizados.");
-  } catch (e) {
-    root.innerHTML = '<p class="err">Falha ao carregar jogos: ' + e.message + '</p>';
-  }
-  ensureReliability();  // warm in background; never blocks the match list
+function editSite(key){
+  const s = SUPPLIERS.find(x=>x.key===key); if(!s) return; const c = s.config||{}; const sel=c.selectors||{};
+  $('#s-key').value=s.key; $('#s-name').value=s.name||''; $('#s-base').value=s.baseUrl||'';
+  $('#s-search').value=c.searchUrl||''; $('#s-auth').value=c.authMode||'cookie'; $('#s-locale').value=c.priceLocale||'br';
+  $('#s-token').value=''; $('#sel-item').value=sel.item||''; $('#sel-name').value=sel.name||'';
+  $('#sel-price').value=sel.price||''; $('#sel-link').value=sel.link||''; $('#sel-image').value=sel.image||''; $('#sel-stock').value=sel.stock||'';
+  $('#site-msg').textContent='Editando "'+ (s.name||s.key) +'". Token vazio mantém o atual.';
+  window.scrollTo({top:0,behavior:'smooth'});
 }
 
-let _relPromise = null;
-function ensureReliability() {
-  if (RELIABILITY) return Promise.resolve();
-  if (!_relPromise)
-    _relPromise = api("/api/reliability")
-      .then(r => { RELIABILITY = r.byMarket; })
-      .catch(() => { _relPromise = null; });  // allow retry on failure
-  return _relPromise;
+// ---------- search ----------
+let LAST_SEARCH = null, CURRENT_SORT = 'price_asc';
+async function doSearch(){
+  const q = $('#q').value.trim(); const box = $('#results');
+  if(q.length<2){ box.innerHTML='<p class="muted">Digite ao menos 2 caracteres.</p>'; return; }
+  box.innerHTML='<p class="muted"><span class="spin"></span> Buscando em todos os fornecedores…</p>';
+  try{
+    const data = await api('/api/search?q='+encodeURIComponent(q));
+    if(data.note){ box.innerHTML='<p class="muted">'+data.note+' <a href="#" onclick="showView(\'suppliers\');return false">Configurar fornecedores</a></p>'; return; }
+    LAST_SEARCH = data;
+    // flatten all suppliers' products into one list, tagged with the supplier
+    data.items = [];
+    for(const s of data.suppliers){ if(s.ok) for(const p of (s.products||[])) data.items.push(Object.assign({supplier:s.name||s.key}, p)); }
+    renderResults();
+  }catch(e){ box.innerHTML='<p class="err">Erro: '+e.message+'</p>'; }
 }
-
-function renderMatchList(root, filter, emptyMsg) {
-  root.innerHTML = "";
-  let any = false;
-  for (const day of DAYS) {
-    const ms = day.matches.filter(filter);
-    if (!ms.length) continue;
-    any = true;
-    root.appendChild(el("div", "day", day.label));
-    for (const m of ms) root.appendChild(matchRow(m));
-  }
-  if (!any) root.innerHTML = '<p class="muted">' + (emptyMsg || "Nada por aqui.") + '</p>';
-}
-
-function renderFinished() {
-  if (finishedRendered) return;
-  finishedRendered = true;
-  renderMatchList(document.getElementById("view-finished"),
-                  m => m.statusType === "finished", "Nenhum jogo finalizado ainda.");
-}
-
-// ---------- best bets board ----------
-let bestLoaded = false;
-async function loadBestBets(force) {
-  const root = document.getElementById("view-best");
-  if (bestLoaded && !force) return;
-  root.innerHTML = '<p class="muted"><span class="spin"></span> Calculando os melhores palpites dos próximos jogos… (pode demorar na 1ª vez)</p>';
-  try { renderBestBets(root, await api("/api/best-bets")); bestLoaded = true; }
-  catch (e) { root.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
-}
-
-let lastBestBets = null, bestSort = "score";
-const BEST_SORTS = [["score", "star", "Melhor"], ["time", "clock", "Horário"], ["rel", "shield", "Confiança"]];
-
-function renderBestBets(root, d) { lastBestBets = d; drawBestBets(); }
-function setBestSort(mode) { bestSort = mode; drawBestBets(); }
-
-let bestTab = "market";
-function setBestTab(t) { bestTab = t; drawBestBets(); }
-
-function drawBestBets() {
-  const root = document.getElementById("view-best");
-  const d = lastBestBets;
-  root.innerHTML = "";
-  const head = el("div", "toolbar");
-  head.innerHTML = `<span class="pill">${d.matchesConsidered} jogos · próximas ${d.windowHours}h</span>`;
-  const rb = el("button", "", ICON.refresh + "<span>Recalcular</span>"); rb.onclick = () => loadBestBets(true);
-  head.appendChild(rb);
-  // sub-tabs: mercados vs jogadores
-  for (const [k, ic, lab] of [["market", ICON.layers, "Mercados"], ["player", ICON.user, "Jogadores"]]) {
-    const tb = el("button", k === bestTab ? "primary" : "", ic + "<span>" + lab + "</span>");
-    tb.onclick = () => setBestTab(k);
-    head.appendChild(tb);
-  }
-  root.appendChild(head);
-
-  const sortbar = el("div", "toolbar");
-  sortbar.appendChild(el("span", "muted", "ordenar:"));
-  for (const [k, ic, lab] of BEST_SORTS) {
-    const sb = el("button", k === bestSort ? "primary" : "", ICON[ic] + "<span>" + lab + "</span>");
-    sb.onclick = () => setBestSort(k);
-    sortbar.appendChild(sb);
-  }
-  root.appendChild(sortbar);
-
-  const isPlayer = bestTab === "player";
-  const list = [...(isPlayer ? (d.playerBets || []) : (d.bets || []))];
-  if (!list.length) { root.appendChild(el("p", "muted", "Nada na janela atual.")); return; }
-  root.appendChild(el("p", "muted", "Ranqueado por confiança × acerto histórico². Digite a odd da casa para ver se há VALOR."));
-
-  if (bestSort === "time") list.sort((a, b) => (a.startTimestamp || 0) - (b.startTimestamp || 0) || b.score - a.score);
-  else if (bestSort === "rel") list.sort((a, b) => (b.reliability ?? -1) - (a.reliability ?? -1) || b.score - a.score);
-  else list.sort((a, b) => b.score - a.score);
-
-  const wrap = el("div", "scroll"); const t = el("table", "rwd");
-  const firstCol = isPlayer ? "Jogador" : "Jogo";
-  t.innerHTML = `<tr class="hr"><th>${firstCol}</th><th class="p">Início</th><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Confiab.</th><th class="p">Odd → Valor</th></tr>`;
-  for (const b of list) {
-    const rel = b.reliability != null ? pc(b.reliability) : '<span class="muted">–</span>';
-    const first = isPlayer
-      ? `<td class="t">${b.player}<div class="muted">${b.home} x ${b.away}</div></td>`
-      : `<td class="t">${b.home} <span class="muted">x</span> ${b.away}</td>`;
-    t.innerHTML += `<tr>${first}`
-      + `<td class="p muted" data-label="Início">${b.time || ""}</td>`
-      + `<td data-label="Mercado">${b.market}</td><td data-label="Palpite"><b>${b.selection}</b></td>`
-      + `<td class="p" data-label="Prob.">${pc(b.prob)}</td><td class="p" data-label="Confiab.">${rel}</td>`
-      + `<td class="oddcell" data-label="Odd → Valor">${oddInput(b.prob)}</td></tr>`;
-  }
-  wrap.appendChild(t); root.appendChild(wrap);
-}
-
-function matchRow(m) {
-  const wrap = el("div", "match"); wrap.dataset.id = m.id;
-  const statusCls = m.statusType === "inprogress" ? "live" : "";
-  const head = el("div", "match-head");
-  head.innerHTML = `
-    <span class="time">${m.time || "--:--"}</span>
-    <span class="teams">${m.home ?? "?"} <span class="muted">x</span> ${m.away ?? "?"}</span>
-    ${m.group ? `<span class="group">${m.group}</span>` : ""}
-    <span class="status ${statusCls}">${m.statusText || ""}</span>
-    <span class="chev">›</span>`;
-  const detail = el("div", "detail", '<p class="muted">Clique para analisar.</p>');
-  head.onclick = () => {
-    wrap.classList.toggle("open");
-    if (wrap.classList.contains("open") && !wrap.dataset.loaded) loadAnalysis(wrap, detail, m.id);
-  };
-  wrap.append(head, detail);
-  return wrap;
-}
-
-async function loadAnalysis(wrap, detail, id) {
-  wrap.dataset.loaded = "1";
-  detail.innerHTML = '<p class="muted"><span class="spin"></span> Coletando estatísticas e calculando…</p>';
-  try {
-    // fetch reliability in parallel so the Confiab. badges are always ready at render
-    const [data] = await Promise.all([api("/api/analyze/" + id), ensureReliability()]);
-    renderAnalysis(detail, id, data);
-  } catch (e) { wrap.dataset.loaded = ""; detail.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
-}
-
-function mlBox(title, rows) {
-  // rows: [[label, items, fmt]]
-  const box = el("div", "mlbox");
-  box.appendChild(el("div", "h", title));
-  for (const [label, items, fmt] of rows) {
-    if (!items || !items.length) continue;
-    const txt = items.map(i => `<b>${fmt(i)}</b> (${pct(i.prob)})`).join(" · ");
-    box.appendChild(el("div", "ml", `<span class="mlk">${label}:</span> ${txt}`));
-  }
-  return box;
-}
-const fmtVal = i => i.value, fmtLabel = i => i.label;
-
-const CATSHORT = {
-  "1X2": "resultado", "Gols O/U": "gols", "Ambos marcam": "BTTS", "Corners": "escanteios",
-  "Total shots": "finalizações", "Shots on target": "chutes no alvo", "Yellow cards": "cartões", "Fouls": "faltas",
+const SORTS = {
+  price_asc:  {label:'Preço ↑', fn:(a,b)=> (a.price==null)-(b.price==null) || (a.price||0)-(b.price||0)},
+  price_desc: {label:'Preço ↓', fn:(a,b)=> (a.price==null)-(b.price==null) || (b.price||0)-(a.price||0)},
+  name:       {label:'Nome',    fn:(a,b)=> (a.name||'').localeCompare(b.name||'')},
+  supplier:   {label:'Fornecedor', fn:(a,b)=> (a.supplier||'').localeCompare(b.supplier||'') || (a.price||1e12)-(b.price||1e12)},
+  stock:      {label:'Estoque ↓', fn:(a,b)=> (b.stock||0)-(a.stock||0)},
 };
-const relRate = cat => { const r = RELIABILITY && RELIABILITY[cat]; return r && r.rate != null ? r.rate : 0.55; };
+function setSort(s){ CURRENT_SORT=s; renderResults(); }
+function renderResults(){
+  const box = $('#results'), d = LAST_SEARCH; if(!d) return;
+  const okSup = d.suppliers.filter(s=>s.ok), badSup = d.suppliers.filter(s=>!s.ok);
+  const warn = d.suppliers.filter(s=>s.needsAuth).map(s=>s.name||s.key);
+  const items = [...d.items].sort(SORTS[CURRENT_SORT].fn);
+  window._items = items;   // for add-to-cart by index
+  let html = `<div class="row" style="justify-content:space-between">
+    <span class="muted">${items.length} produto(s) · ${okSup.length} fornecedor(es) · ${d.tookMs}ms</span>
+    <span class="row" style="gap:4px">Ordenar: ${Object.entries(SORTS).map(([k,v])=>`<button class="btn small ${k===CURRENT_SORT?'primary':''}" onclick="setSort('${k}')">${v.label}</button>`).join('')}</span>
+  </div>`;
+  if(badSup.length) html += '<p class="err" style="margin:6px 0">Falharam: '+badSup.map(s=>`${s.name||s.key} (${s.error||'erro'})`).join(' · ')+'</p>';
+  if(warn.length) html += `<p class="warn" style="margin:6px 0">Sem preços em: ${warn.join(', ')} — sessão pode ter expirado (Testar em Fornecedores).</p>`;
+  if(!items.length){ box.innerHTML = html + '<p class="muted">Nada encontrado.</p>'; return; }
+  html += '<div class="scroll" style="margin-top:8px"><table class="rwd"><tr class="hr">'+
+    '<th></th><th>Produto</th><th>Fornecedor</th><th class="p">Estoque</th><th class="p">Preço</th><th></th></tr>' +
+    items.map((p,i)=>`<tr>
+      <td>${p.image?`<img src="${p.image}" class="thumb" onerror="this.style.visibility='hidden'">`:''}</td>
+      <td data-label="Produto"><a href="${p.url}" target="_blank" rel="noopener"><b>${p.name}</b></a>
+        <div class="muted" style="font-size:12px">${[p.brand,p.sku?('SKU '+p.sku):null,p.part_number].filter(Boolean).join(' · ')}</div></td>
+      <td data-label="Fornecedor">${p.supplier}</td>
+      <td class="p" data-label="Estoque">${p.in_stock===false?'<span class="warn">0</span>':(p.stock!=null?p.stock:'—')}</td>
+      <td class="p" data-label="Preço" style="text-align:right">${priceCell(p,i)}</td>
+      <td class="p row" style="justify-content:flex-end;gap:6px">
+        ${hasRegions(p)?'':`<button class="btn small primary" onclick="addToCart(${i})" title="Adicionar ao carrinho">+ carrinho</button>`}
+        <a href="${p.url}" target="_blank" rel="noopener" class="btn small">abrir</a></td>
+    </tr>`).join('') + '</table></div>';
+  box.innerHTML = html;
+}
 
-function bestPerCategory(preds, minRel) {
-  const by = {};
-  for (const p of preds || []) {
-    if (p.prob == null) continue;
-    const rel = relRate(p.category);
-    if (minRel && (rel < minRel || p.prob < 0.5)) continue;
-    const s = p.prob * rel;
-    if (!by[p.category] || s > by[p.category]._s) by[p.category] = Object.assign({}, p, { _rel: rel, _s: s });
+// ---------- cart / quote (client-side, localStorage) ----------
+let CART = [];
+function loadCart(){ try{ CART = JSON.parse(localStorage.getItem('compubot_cart')||'[]'); }catch(e){ CART=[]; }
+  const gm = localStorage.getItem('compubot_markup'); if(gm && $('#cart-markup')) $('#cart-markup').value = gm; updateCartBadge(); }
+function saveCart(){ localStorage.setItem('compubot_cart', JSON.stringify(CART));
+  if($('#cart-markup')) localStorage.setItem('compubot_markup', $('#cart-markup').value); updateCartBadge(); }
+function updateCartBadge(){ const b=$('#cart-badge'); if(!b) return; const n=CART.reduce((s,i)=>s+(i.qty||1),0);
+  b.textContent=n; b.classList.toggle('show', n>0); }
+function globalMarkup(){ const v=parseFloat(($('#cart-markup')||{}).value); return isNaN(v)?0:v; }
+function effMarkup(it){ return (it.markup===''||it.markup==null||isNaN(parseFloat(it.markup)))?globalMarkup():parseFloat(it.markup); }
+function clientUnit(it){ const c=parseFloat(it.cost); if(isNaN(c)) return null; return c*(1+effMarkup(it)/100); }
+
+function addToCart(idx, ti){
+  const p = (window._items||[])[idx]; if(!p) return;
+  let cost=p.price, region=null;
+  const tiers=p.tiers||[];
+  if(ti!=null && tiers[ti]){ cost=tiers[ti].price; region=tiers[ti].region||null; }
+  const id = (p.supplier||'')+'|'+(p.url||p.name)+(region?'|'+region:'');
+  const name = p.name + (region?` (${region})`:'');
+  const ex = CART.find(x=>x.id===id);
+  if(ex){ ex.qty=(ex.qty||1)+1; } else {
+    CART.push({id, name, supplier:p.supplier, url:p.url, image:p.image,
+               cost:(cost!=null?cost:''), qty:1, markup:''});
   }
-  return Object.values(by);
+  saveCart();
+  const btn=event&&event.target; if(btn){ const t=btn.textContent; btn.textContent='✓'; setTimeout(()=>btn.textContent=t,900); }
 }
+function updateCart(id, field, value){ const it=CART.find(x=>x.id===id); if(!it) return;
+  it[field]= field==='qty' ? Math.max(1, parseInt(value)||1) : value; saveCart(); renderCart(); }
+function removeCart(id){ CART=CART.filter(x=>x.id!==id); saveCart(); renderCart(); }
+function clearCart(){ if(CART.length && !confirm('Limpar o carrinho?')) return; CART=[]; saveCart(); renderCart(); }
 
-function renderHighlights(data) {
-  const box = el("div", "preds");
-  box.appendChild(el("h3", null, ICON.star + "<span>Destaques do jogo</span>"));
-
-  // Top 3 single picks (distinct markets), by prob × reliability
-  const top = bestPerCategory(data.predictions).sort((a, b) => b._s - a._s).slice(0, 3);
-  if (top.length) {
-    box.appendChild(el("div", "seclabel", "Top 3 mais prováveis"));
-    const wrap = el("div", "scroll"); const t = el("table", "rwd");
-    t.innerHTML = '<tr class="hr"><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Confiab.</th></tr>';
-    for (const p of top)
-      t.innerHTML += `<tr><td class="t">${p.market}</td><td data-label="Palpite"><b>${p.selection}</b></td>`
-        + `<td class="p" data-label="Prob.">${pc(p.prob)}</td><td class="p" data-label="Confiab.">${relBadge(p.category)}</td></tr>`;
-    wrap.appendChild(t); box.appendChild(wrap);
-  }
-
-  // Combos: pairs of reliable picks from different markets
-  const reliable = bestPerCategory(data.predictions, 0.6).sort((a, b) => b._s - a._s);
-  const combos = [];
-  for (let i = 0; i < reliable.length; i++)
-    for (let j = i + 1; j < reliable.length; j++)
-      combos.push({ legs: [reliable[i], reliable[j]], prob: reliable[i].prob * reliable[j].prob });
-  combos.sort((a, b) => b.prob - a.prob);
-  if (combos.length) {
-    box.appendChild(el("div", "seclabel", "Combinadas sugeridas (alta confiabilidade)"));
-    for (const c of combos.slice(0, 3)) {
-      const legs = c.legs.map(l => `<b>${l.selection}</b> <span class="muted">${CATSHORT[l.category] || l.category}</span>`).join("  +  ");
-      box.appendChild(el("div", "ml", `${legs} &nbsp;→&nbsp; <b style="color:${pColor(c.prob)}">${pct(c.prob)}</b>`));
-    }
-    box.appendChild(el("p", "muted", "Probabilidade combinada estimada (assume independência entre os mercados)."));
-  }
-  return box;
+function renderCart(){
+  const box=$('#cart-body'); if(!box) return; updateCartBadge();
+  if(!CART.length){ box.innerHTML='<p class="muted">Carrinho vazio. Adicione produtos pela aba Buscar.</p>'; return; }
+  let totCost=0, totClient=0;
+  const rows = CART.map(it=>{
+    const cu=clientUnit(it), qty=it.qty||1, c=parseFloat(it.cost);
+    const sub = cu!=null?cu*qty:null; if(!isNaN(c)) totCost+=c*qty; if(sub!=null) totClient+=sub;
+    return `<tr>
+      <td data-label="Produto"><a href="${it.url}" target="_blank" rel="noopener"><b>${it.name}</b></a>
+        <div class="muted" style="font-size:12px">${it.supplier||''}</div></td>
+      <td class="p" data-label="Custo un."><input type="number" step="0.01" value="${it.cost}" onchange="updateCart('${it.id}','cost',this.value)"></td>
+      <td class="p" data-label="Qtd"><input type="number" step="1" min="1" value="${qty}" onchange="updateCart('${it.id}','qty',this.value)"></td>
+      <td class="p" data-label="Margem %"><input type="number" step="1" placeholder="${globalMarkup()}" value="${it.markup}" onchange="updateCart('${it.id}','markup',this.value)"></td>
+      <td class="p" data-label="Preço cliente">${cu!=null?brl(cu):'—'}</td>
+      <td class="p" data-label="Subtotal"><b>${sub!=null?brl(sub):'—'}</b></td>
+      <td class="p"><button class="btn small danger" onclick="removeCart('${it.id}')">x</button></td>
+    </tr>`;
+  }).join('');
+  const profit = totClient-totCost;
+  box.innerHTML = '<div class="scroll"><table class="rwd"><tr class="hr">'+
+    '<th>Produto</th><th class="p">Custo un.</th><th class="p">Qtd</th><th class="p">Margem %</th><th class="p">Preço cliente</th><th class="p">Subtotal</th><th></th></tr>'+
+    rows+'</table></div>'+
+    `<div class="card" style="margin-top:12px"><div class="row" style="justify-content:space-around;text-align:center">
+      <div><div class="muted">Custo total</div><div style="font-size:16px;font-weight:600">${brl(totCost)}</div></div>
+      <div><div class="muted">Total ao cliente</div><div class="tot">${brl(totClient)}</div></div>
+      <div><div class="muted">Lucro</div><div style="font-size:16px;font-weight:600;color:var(--accent2)">${brl(profit)}</div></div>
+    </div></div>`;
 }
-
-function renderAnalysis(detail, id, data) {
-  detail.innerHTML = "";
-  const home = data.event.home.name, away = data.event.away.name;
-
-  const bar = el("div", "toolbar");
-  const confirmed = data.lineupConfirmed;
-  bar.innerHTML = `<span class="badge ${confirmed ? "ok" : "prov"}">${confirmed ? "Escalação confirmada" : "Escalação provisória"}</span>
-    <span class="pill">amostra: ${data.meta.homeMatchesSampled}/${data.meta.awayMatchesSampled} jogos</span>
-    <span class="pill">confiança: ${data.meta.confidence}</span>`;
-  const refreshBtn = el("button", "", ICON.refresh + "<span>Atualizar escalação</span>");
-  refreshBtn.disabled = confirmed;
-  refreshBtn.onclick = () => doRefresh(detail, id, refreshBtn);
-  bar.appendChild(refreshBtn);
-  const copyBtn = el("button", "", ICON.copy + "<span>Copiar</span>");
-  copyBtn.onclick = () => copyMatch(id, data, copyBtn);
-  bar.appendChild(copyBtn);
-  detail.appendChild(bar);
-
-  // ---- build sections ----
-  const g = data.goals, ml = g.mostLikely;
-
-  // Resumo: referee + highlights + full predictions + accuracy
-  const sResumo = el("div", "sec");
-  if (data.referee) {
-    const r = data.referee;
-    const info = r.known
-      ? `${r.name} (${r.country || "?"}) — média ${r.avgYellow} cartões/jogo em ${r.matches} jogo(s); fator <b>${r.factor}×</b> (liga ${r.leagueAvg})`
-      : `${r.name || "árbitro indefinido"} — sem histórico; fator cartões neutro (1×)`;
-    sResumo.appendChild(el("div", "ref", `${ICON.flag}<span><b>Árbitro:</b> ${info}</span>`));
-  }
-  sResumo.appendChild(renderHighlights(data));
-  if (data.predictions) sResumo.appendChild(renderPredictions(data.predictions));
-  if (data.accuracy) sResumo.appendChild(renderAccuracy(data.accuracy));
-
-  // Gols & Resultado
-  const sGols = el("div", "sec");
-  const gGrid = el("div", "grid");
-  const resCard = el("div", "card");
-  resCard.appendChild(el("h3", null, "Resultado (1X2)"));
-  const three = el("div", "three");
-  three.innerHTML = `
-    <div><div class="v" style="color:${pColor(g.result.home)}">${pct(g.result.home)}</div><div class="l">${home}</div></div>
-    <div><div class="v" style="color:${pColor(g.result.draw)}">${pct(g.result.draw)}</div><div class="l">Empate</div></div>
-    <div><div class="v" style="color:${pColor(g.result.away)}">${pct(g.result.away)}</div><div class="l">${away}</div></div>`;
-  resCard.appendChild(three);
-  const pbar = el("div", "pbar");
-  pbar.innerHTML = `<i style="width:${g.result.home*100}%;background:var(--accent2)"></i>`
-    + `<i style="width:${g.result.draw*100}%;background:var(--muted)"></i>`
-    + `<i style="width:${g.result.away*100}%;background:var(--accent3)"></i>`;
-  resCard.appendChild(pbar);
-  resCard.appendChild(el("p", "muted", `Gols esperados: ${home} ${g.expectedGoals.home} — ${g.expectedGoals.away} ${away}`));
-  resCard.appendChild(ouTable("Over/Under Gols", g.overUnder));
-  resCard.appendChild(kvTable("Ambos marcam", {"Sim":g.btts.yes, "Não":g.btts.no}));
-  resCard.appendChild(mlBox("Mais prováveis", [
-    ["Total de gols", ml.totalGoals, i => i.value + " gols"],
-    [`Gols ${home}`, ml.homeGoals, fmtVal],
-    [`Gols ${away}`, ml.awayGoals, fmtVal],
-    ["Over/Under", ml.overUnder, fmtLabel],
-    ["Placar", ml.score, fmtLabel],
-  ]));
-  gGrid.appendChild(resCard);
-  const csCard = el("div", "card");
-  csCard.appendChild(el("h3", null, "Placar & handicap"));
-  csCard.appendChild(probList(g.correctScore.map(c => [c.score, c.prob])));
-  csCard.appendChild(ouTable("Handicap asiático (mando " + home + ")", null, g.asianHandicap, home, away));
-  gGrid.appendChild(csCard);
-  sGols.appendChild(gGrid);
-
-  // Mercados de time
-  const sTeam = el("div", "sec");
-  const tGrid = el("div", "grid");
-  for (const [key, p] of Object.entries(data.teamProps)) {
-    const c = el("div", "card");
-    c.appendChild(el("h3", null, p.label));
-    if (p.home) c.appendChild(ouTable(home + " — linhas", p.home.lines));
-    if (p.away) c.appendChild(ouTable(away + " — linhas", p.away.lines));
-    if (p.total) c.appendChild(ouTable("Total — linhas", p.total.lines));
-    const rows = [];
-    if (p.total) rows.push([`Total ${p.label.toLowerCase()}`, p.total.mostLikely, fmtVal]);
-    if (p.home) rows.push([`${home}`, p.home.mostLikely, fmtVal]);
-    if (p.away) rows.push([`${away}`, p.away.mostLikely, fmtVal]);
-    c.appendChild(mlBox("Mais prováveis", rows));
-    tGrid.appendChild(c);
-  }
-  sTeam.appendChild(tGrid);
-
-  // Jogadores
-  const sPlayers = el("div", "sec");
-  const actualsMap = data.accuracy ? data.accuracy.playersActual : null;
-  sPlayers.appendChild(playerSection(home, data.playerProps.home, actualsMap));
-  sPlayers.appendChild(playerSection(away, data.playerProps.away, actualsMap));
-
-  // IA
-  const sIA = el("div", "sec");
-  sIA.appendChild(renderGeminiPanel(id));
-
-  // ---- sub-tabs ----
-  const sections = [["Resumo", sResumo], ["Gols & Resultado", sGols],
-                    ["Mercados", sTeam], ["Jogadores", sPlayers], ["IA", sIA]];
-  const tabbar = el("div", "subtabs");
-  const secWrap = el("div");
-  const btns = [];
-  sections.forEach(([label, div], idx) => {
-    div.style.display = idx === 0 ? "" : "none";
-    secWrap.appendChild(div);
-    const b = el("button", idx === 0 ? "active" : "", label);
-    b.onclick = () => {
-      sections.forEach(([, d], i) => d.style.display = i === idx ? "" : "none");
-      btns.forEach((bb, i) => bb.classList.toggle("active", i === idx));
-    };
-    btns.push(b);
-    tabbar.appendChild(b);
-  });
-  detail.appendChild(tabbar);
-  detail.appendChild(secWrap);
-}
-
-function ouTable(title, lines, handicap, home, away) {
-  const c = el("div");
-  c.appendChild(el("div", "muted", title));
-  const wrap = el("div", "scroll"); const t = el("table");
-  if (handicap) {
-    t.innerHTML = "<tr><th>Linha</th><th class='p'>" + home + "</th><th class='p'>" + away + "</th></tr>";
-    for (const [line, v] of Object.entries(handicap))
-      t.innerHTML += `<tr><td>${line}</td><td class="p">${pc(v.home)}</td><td class="p">${pc(v.away)}</td></tr>`;
-  } else {
-    t.innerHTML = "<tr><th>Linha</th><th class='p'>Over</th><th class='p'>Under</th></tr>";
-    for (const [line, v] of Object.entries(lines))
-      t.innerHTML += `<tr><td>${line}</td><td class="p">${pc(v.over)}</td><td class="p">${pc(v.under)}</td></tr>`;
-  }
-  wrap.appendChild(t); c.appendChild(wrap);
-  return c;
-}
-
-function kvTable(title, obj) {
-  const c = el("div");
-  c.appendChild(el("div", "muted", title));
-  const t = el("table");
-  for (const [k, v] of Object.entries(obj)) t.innerHTML += `<tr><td>${k}</td><td class="p">${pc(v)}</td></tr>`;
-  c.appendChild(t);
-  return c;
-}
-
-function probList(pairs) {
-  const t = el("table");
-  for (const [k, v] of pairs) t.innerHTML += `<tr><td>${k}</td><td class="p">${pc(v)}</td></tr>`;
-  return t;
-}
-
-// favored pick at the line nearest the expected value -> {label, prob}
-function pickFromLines(lines, expected) {
-  if (!lines) return null;
-  let best = null, bd = Infinity;
-  for (const k of Object.keys(lines)) {
-    const d = Math.abs(parseFloat(k) - (expected == null ? parseFloat(k) : expected));
-    if (d < bd) { bd = d; best = k; }
-  }
-  const v = lines[best];
-  return v.over >= v.under ? { label: "+" + best, prob: v.over } : { label: "−" + best, prob: v.under };
-}
-
-function pickCell(prop) {
-  if (!prop || !prop.lines) return '<span class="muted">sem dados</span>';
-  const pk = pickFromLines(prop.lines, prop.expected);
-  return `<b>${pk.label}</b> <span style="color:${pColor(pk.prob)}">${(pk.prob*100).toFixed(0)}%</span>`
-    + `<div class="muted">esperado ${prop.expected}</div>`;
-}
-
-function playerSection(teamName, players, actuals) {
-  const d = el("details", "players");
-  d.appendChild(el("summary", null, `Palpites por jogador — ${teamName} (${players.length})`));
-  const wrap = el("div", "scroll"); const t = el("table", "rwd");
-  const realHead = actuals ? '<th class="p">Real C/F/Cart.</th>' : '';
-  t.innerHTML = `<tr class="hr"><th>Jogador</th><th>Chutes</th><th>Faltas</th><th class="p">Cartão</th>${realHead}<th class="p">Conf.</th></tr>`;
-  for (const p of players) {
-    if (!p.appearances) { t.innerHTML += `<tr><td class="t">${p.name}</td><td class="muted" data-label="">sem amostras</td></tr>`; continue; }
-    const cardCell = p.card ? `<b>${pct(p.card.probAtLeastOne)}</b> <span class="muted">recebe cartão</span>` : '–';
-    let realCell = '';
-    if (actuals) {
-      const ra = actuals[p.playerId];
-      realCell = ra ? `<td class="p" data-label="Real C/F/Cart.">${ra.shots == null ? '–' : ra.shots} / ${ra.fouls} / ${ra.yellow}</td>` : '<td class="p muted" data-label="Real">não jogou</td>';
-    }
-    t.innerHTML += `<tr><td class="t">${p.name} <span class="muted">(${p.appearances}j)</span></td>`
-      + `<td data-label="Chutes">${pickCell(p.shots)}</td><td data-label="Faltas">${pickCell(p.fouls)}</td>`
-      + `<td class="p" data-label="Cartão">${cardCell}</td>${realCell}<td class="p conf-${p.confidence}" data-label="Confiança">${p.confidence}</td></tr>`;
-  }
-  wrap.appendChild(t); d.appendChild(wrap);
-  d.appendChild(el("p", "muted", "Palpite = linha mais provável. “+1.5 chutes” = mais de 1,5 finalizações; “−0.5” = menos. Cartão = chance de receber ao menos 1."));
-  return d;
-}
-
-function renderPredictions(preds) {
-  const box = el("div", "preds");
-  box.appendChild(el("h3", null, ICON.target + "<span>Previsões do modelo</span>"));
-  const wrap = el("div", "scroll"); const t = el("table", "rwd");
-  t.innerHTML = '<tr class="hr"><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p" title="Acerto histórico do modelo neste mercado">Confiab.</th><th class="p">Odd → Valor</th></tr>';
-  for (const p of preds)
-    t.innerHTML += `<tr><td class="t">${p.market}</td><td data-label="Palpite"><b>${p.selection}</b></td>`
-      + `<td class="p" data-label="Prob.">${pc(p.prob)}</td><td class="p" data-label="Confiab.">${relBadge(p.category)}</td>`
-      + `<td class="oddcell" data-label="Odd → Valor">${oddInput(p.prob)}</td></tr>`;
-  wrap.appendChild(t); box.appendChild(wrap);
-  box.appendChild(el("p", "muted", "Confiab. = acerto histórico do modelo no mercado. Digite a odd da casa para ver se há VALOR (modelo > mercado)."));
-  return box;
-}
-
-function renderAccuracy(a) {
-  const card = el("div", "gemini");
-  const s = a.summary;
-  const pred = s.predHitRate == null ? '–' : pct(s.predHitRate);
-  let html = '<h3>' + ICON.check + '<span>Conferência de acertos — jogo finalizado</span></h3>';
-  html += `<div class="three" style="margin-bottom:10px">
-    <div><div class="v">${a.result.correct ? '✓' : '✗'}</div><div class="l">Resultado</div></div>
-    <div><div class="v">${pred}</div><div class="l">Palpites acertados (${s.predHits}/${s.predTotal})</div></div>
-    <div><div class="v">${s.brier}</div><div class="l">Brier (resultado)</div></div></div>`;
-  // Grade EXACTLY the model's predictions (same picks shown pre-match), not re-picked lines.
-  const wrap = el("div", "scroll"); const t = el("table", "rwd");
-  t.innerHTML = '<tr class="hr"><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th>Real</th><th class="p">Acerto</th></tr>';
-  for (const pr of (a.predictionResults || []))
-    t.innerHTML += `<tr><td class="t">${pr.market}</td><td data-label="Palpite"><b>${pr.selection}</b></td>`
-      + `<td class="p" data-label="Prob.">${pc(pr.prob)}</td><td data-label="Real">${pr.actual}</td>`
-      + `<td class="p" data-label="Acerto">${chk(pr.correct)}</td></tr>`;
-  wrap.appendChild(t);
-  card.innerHTML = html; card.appendChild(wrap);
-  card.appendChild(el("p", "muted", "Confere exatamente os palpites mostrados em “Previsões do modelo” (gerados só com jogos anteriores)."));
-  return card;
-}
-
-async function copyMatch(id, data, btn) {
-  const old = btn.innerHTML;
-  btn.innerHTML = '<span class="spin"></span><span>Copiando…</span>';
-  const home = data.event.home.name, away = data.event.away.name;
-  const lines = [`${home} x ${away} — Copa do Mundo 2026 (Bet Stats)`, ""];
-  lines.push("PREVISÕES DO MODELO");
-  for (const p of data.predictions || []) {
-    const exp = p.expected != null ? ` [esp. ${p.expected}]` : "";
-    lines.push(`• ${p.market}: ${p.selection} — ${(p.prob * 100).toFixed(0)}%${exp}`);
-  }
-  try {
-    const g = await api("/api/gemini/" + id);
-    const secs = (g && g.sections) || [];
-    const finals = secs.map(s => s.final).filter(Boolean);
-    if (finals.length) {
-      const multi = finals.length > 1;
-      finals.forEach((f, i) => {
-        lines.push("", "ANÁLISE FINAL DA IA (consenso)" + (multi ? ` — seção ${i + 1}` : ""));
-        if (f.summary) lines.push(f.summary);
-        if (f.consensusBets && f.consensusBets.length) {
-          lines.push("Apostas de consenso:");
-          for (const b of f.consensusBets) lines.push(`• ${b.market}: ${b.selection} (${b.confidence})`);
-        }
-        if (f.createdAt) lines.push(`(gerada em ${f.createdAt})`);
-      });
-    } else {
-      lines.push("", "ANÁLISE FINAL DA IA: ainda não gerada.");
-    }
-  } catch (e) {
-    lines.push("", "(análise da IA indisponível)");
-  }
-  const text = lines.join("\n");
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (e) {
-    const ta = document.createElement("textarea");
-    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-    document.body.appendChild(ta); ta.select();
-    try { document.execCommand("copy"); } catch (_) {}
-    ta.remove();
-  }
-  btn.innerHTML = ICON.check + "<span>Copiado!</span>";
-  setTimeout(() => { btn.innerHTML = old; }, 2000);
-}
-
-async function doRefresh(detail, id, btn) {
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Atualizando…';
-  try { renderAnalysis(detail, id, await api("/api/refresh/" + id, { method: "POST" })); }
-  catch (e) { btn.disabled = false; btn.textContent = "↻ Atualizar escalação"; alert("Falha: " + e.message); }
-}
-
-function renderGeminiPanel(id) {
-  const box = el("div", "gpanel");
-  loadGemini(id, box);
-  return box;
-}
-
-async function loadGemini(id, box) {
-  const head = '<h3>' + ICON.spark + '<span>Análise da IA (Gemini)</span></h3>';
-  box.innerHTML = head + '<p class="muted"><span class="spin"></span> carregando…</p>';
-  try { renderGeminiBox(id, box, await api("/api/gemini/" + id)); }
-  catch (e) { box.innerHTML = head + '<p class="err">' + e.message + '</p>'; }
-}
-
-function renderGeminiBox(id, box, info) {
-  box.innerHTML = "";
-  box.appendChild(el("h3", null, ICON.spark + "<span>Análise da IA (Gemini)</span>"));
-  if (!info.enabled)
-    box.appendChild(el("p", "muted", "IA desativada — configure GEMINI_API_KEY no servidor para habilitar."));
-  const sections = info.sections || [];
-  const multi = sections.length > 1;
-  sections.forEach((sec, si) => {
-    if (multi) box.appendChild(el("div", "gsec-h", "Seção " + (si + 1)));
-    sec.analyses.forEach((a, i) => box.appendChild(geminiResult(a, i + 1, info.limit)));
-    if (sec.final) box.appendChild(geminiFinal(sec.final));
-  });
-
-  const last = sections[sections.length - 1] || {};
-  const btn = el("button", "primary");
-  if (!info.enabled) { btn.innerHTML = ICON.spark + "<span>Pedir análise da IA</span>"; btn.disabled = true; }
-  else if (last.canAnalyze) { btn.innerHTML = ICON.spark + `<span>Pedir análise da IA (${last.used}/${info.limit})</span>`; btn.onclick = () => runGemini(id, box, btn); }
-  else if (last.canFinal) { btn.innerHTML = ICON.target + "<span>Gerar análise final (comparar as 2)</span>"; btn.onclick = () => runGemini(id, box, btn); }
-  else if (info.adminConfigured) { btn.innerHTML = ICON.spark + "<span>+ Nova seção da IA (admin)</span>"; btn.onclick = () => addGeminiSection(id, box, btn); }
-  else { btn.textContent = "Análise final concluída"; btn.disabled = true; }
-  box.appendChild(btn);
-  box.appendChild(el("p", "muted", "Até 2 análises independentes por seção; depois uma análise final de consenso. As análises ficam salvas para todos."));
-}
-
-async function runGemini(id, box, btn) {
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> IA processando… (10-30s)';
-  try { renderGeminiBox(id, box, await api("/api/gemini/" + id, { method: "POST" })); }
-  catch (e) {
-    btn.disabled = false; btn.innerHTML = ICON.spark + "<span>Tentar novamente</span>";
-    const err = el("p", "err", "Falha: " + e.message); box.appendChild(err);
-  }
-}
-
-let GEMINI_ADMIN_TOKEN = null;  // kept in memory for the session after first successful use
-async function addGeminiSection(id, box, btn) {
-  if (!GEMINI_ADMIN_TOKEN) {
-    const t = prompt("Token de admin para abrir uma nova seção da IA:");
-    if (!t) return;
-    GEMINI_ADMIN_TOKEN = t.trim();
-  }
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> abrindo seção…';
-  try {
-    const info = await api("/api/gemini/" + id, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "new_section", token: GEMINI_ADMIN_TOKEN }),
-    });
-    renderGeminiBox(id, box, info);
-  } catch (e) {
-    GEMINI_ADMIN_TOKEN = null;  // clear so a wrong token can be re-entered
-    btn.disabled = false; btn.innerHTML = ICON.spark + "<span>+ Nova seção da IA (admin)</span>";
-    box.appendChild(el("p", "err", "Falha: " + e.message));
-  }
-}
-
-function geminiFinal(f) {
-  const d = el("div", "gres");
-  d.style.borderLeft = "2px solid var(--accent)";
-  const fwhen = f.createdAt ? ` · ${f.createdAt}` : "";
-  let html = `<div class="gh" style="color:var(--accent);display:flex;align-items:center;gap:6px">${ICON.check}<span>Análise final — consenso${fwhen}</span></div><p>${f.summary || ""}</p>`;
-  if (f.consensusBets?.length) {
-    html += '<div class="scroll"><table><tr><th>Mercado</th><th>Palpite (consenso)</th><th class="p">Conf.</th></tr>';
-    for (const b of f.consensusBets)
-      html += `<tr><td>${b.market}</td><td><b>${b.selection}</b><div class="muted">${b.rationale || ""}</div></td>`
-        + `<td class="p conf-${b.confidence}">${b.confidence || ""}</td></tr>`;
-    html += '</table></div>';
-  } else {
-    html += '<p class="muted">As duas análises não convergiram em nenhum palpite.</p>';
-  }
-  if (f.divergences?.length) html += '<p class="muted">Divergências: ' + f.divergences.join(" · ") + '</p>';
-  d.innerHTML = html;
-  return d;
-}
-
-function geminiResult(a, n, limit) {
-  const d = el("div", "gres");
-  const when = a.createdAt ? ` · ${a.createdAt}` : "";
-  let html = `<div class="gh">Análise ${n} de ${limit}${when}</div><p>${a.summary || ""}</p>`;
-  if (a.keyFactors?.length) html += '<ul>' + a.keyFactors.map(k => '<li>' + k + '</li>').join('') + '</ul>';
-  if (a.topBets?.length) {
-    html += '<div class="scroll"><table><tr><th>Mercado</th><th>Palpite</th><th class="p">Prob.</th><th class="p">Conf.</th></tr>';
-    for (const b of a.topBets) {
-      const prob = b.modelProbability != null ? pc(b.modelProbability) : "–";
-      html += `<tr><td>${b.market}</td><td><b>${b.selection}</b><div class="muted">${b.rationale || ""}</div></td>`
-        + `<td class="p">${prob}</td><td class="p conf-${b.confidence}">${b.confidence || ""}</td></tr>`;
-    }
-    html += '</table></div>';
-  }
-  if (a.cautions?.length) html += '<p class="muted">Riscos: ' + a.cautions.join(" · ") + '</p>';
-  d.innerHTML = html;
-  return d;
-}
-
-// ---------- dashboard ----------
-let dashLoaded = false;
-async function loadDashboard(force) {
-  const root = document.getElementById("view-dashboard");
-  if (dashLoaded && !force) return;
-  root.innerHTML = '<p class="muted"><span class="spin"></span> Avaliando todos os jogos finalizados… (pode demorar na 1ª vez)</p>';
-  try {
-    const [dash, ai] = await Promise.all([api("/api/dashboard"), api("/api/ai-performance").catch(() => null)]);
-    renderDashboard(root, dash);
-    if (ai) root.appendChild(renderAiPerformance(ai));
-    dashLoaded = true;
-  } catch (e) { root.innerHTML = '<p class="err">Erro: ' + e.message + '</p>'; }
-}
-
-const AI_CONF_LAB = { high: "Alta", medium: "Média", low: "Baixa" };
-const AI_CONF_ORDER = { high: 0, medium: 1, low: 2 };
-
-function aiTierRow(acc) {
-  const t = acc.tiers || {}, o = acc.overall || {};
-  const three = el("div", "three"); three.style.margin = "0 0 10px";
-  const brier = acc.brier != null ? `<div><div class="v">${acc.brier}</div><div class="l">Brier (picks c/ prob.)</div></div>` : "";
-  three.innerHTML = `
-    <div><div class="v" style="color:${pColor((t.high||{}).rate)}">${pct((t.high||{}).rate)}</div><div class="l">Alta conf. (${(t.high||{}).hits||0}/${(t.high||{}).total||0})</div></div>
-    <div><div class="v" style="color:${pColor((t.medium||{}).rate)}">${pct((t.medium||{}).rate)}</div><div class="l">Média conf. (${(t.medium||{}).hits||0}/${(t.medium||{}).total||0})</div></div>
-    <div><div class="v" style="color:${pColor((t.low||{}).rate)}">${pct((t.low||{}).rate)}</div><div class="l">Baixa conf. (${(t.low||{}).hits||0}/${(t.low||{}).total||0})</div></div>
-    <div><div class="v" style="color:${pColor(o.rate)}">${pct(o.rate)}</div><div class="l">Geral (${o.hits||0}/${o.total||0})</div></div>${brier}`;
-  return three;
-}
-
-function aiByMarket(acc) {
-  const bm = acc.byMarket || {};
-  const keys = Object.keys(bm);
-  if (!keys.length) return null;
-  const sorted = keys.map(k => [k, bm[k]]).sort((a, b) => (b[1].rate || 0) - (a[1].rate || 0));
-  let rows = "";
-  for (const [k, v] of sorted) {
-    const flag = v.total < 10 ? ' <span class="muted">(amostra baixa)</span>' : "";
-    rows += `<tr><td class="t">${k}${flag}</td><td class="p" data-label="Acertos">${v.hits}/${v.total}</td>`
-      + `<td class="p" data-label="Taxa" style="color:${pColor(v.rate)}">${pc(v.rate)}</td></tr>`;
-  }
-  return dashTable('<tr class="hr"><th>Mercado (IA)</th><th class="p">Acertos</th><th class="p">Taxa</th></tr>', rows);
-}
-
-function aiBetsTable(bets) {
-  const sorted = [...(bets || [])].sort((a, b) => AI_CONF_ORDER[a.confidence] - AI_CONF_ORDER[b.confidence]);
-  const wrap = el("div", "scroll"); const tb = el("table", "rwd");
-  tb.innerHTML = '<tr class="hr"><th>Jogo</th><th>Mercado</th><th>Palpite</th><th class="p">Conf.</th><th class="p">Acerto</th></tr>';
-  for (const b of sorted)
-    tb.innerHTML += `<tr><td class="t">${b.match}</td><td data-label="Mercado">${b.market || b.marketKey || ""}</td>`
-      + `<td data-label="Palpite"><b>${b.selection || ""}</b></td><td class="p conf-${b.confidence}" data-label="Conf.">${AI_CONF_LAB[b.confidence] || ""}</td>`
-      + `<td class="p" data-label="Acerto">${b.correct == null ? '<span class="muted">n/a</span>' : chk(b.correct)}</td></tr>`;
-  wrap.appendChild(tb); return wrap;
-}
-
-function aiPanel(title, subtitle, acc) {
-  const card = el("div", "gpanel"); card.style.marginTop = "12px";
-  card.appendChild(el("h3", null, ICON.spark + `<span>${title}</span>`));
-  if (!acc || !(acc.overall && acc.overall.total) ) {
-    card.appendChild(el("p", "muted", subtitle));
-    return card;
-  }
-  card.appendChild(aiTierRow(acc));
-  const bm = aiByMarket(acc);
-  if (bm) { card.appendChild(el("p", "muted", "Acerto por mercado:")); card.appendChild(bm); }
-  card.appendChild(aiBetsTable(acc.bets));
-  const ung = acc.ungraded ? ` ${acc.ungraded} palpite(s) não verificáveis automaticamente.` : "";
-  card.appendChild(el("p", "muted", "'n/a' = palpite sem como verificar automaticamente." + ung));
-  return card;
-}
-
-function renderAiPerformance(ai) {
-  const frag = document.createDocumentFragment();
-  const ind = ai.individual || {}, con = ai.consensus || { tiers: ai.tiers, overall: ai.overall, bets: ai.bets, matches: ai.matchesWithConsensus };
-  const hasAny = (ind.overall && ind.overall.total) || (con.overall && con.overall.total);
-  if (!hasAny) {
-    const card = el("div", "gpanel"); card.style.marginTop = "12px";
-    card.appendChild(el("h3", null, ICON.spark + "<span>Desempenho da IA</span>"));
-    card.appendChild(el("p", "muted", "Nenhuma análise da IA gerada ainda em jogos finalizados. Gere análises da IA (e o consenso) em jogos já encerrados para alimentar este painel."));
-    frag.appendChild(card);
-    return frag;
-  }
-  // ALL individual analyses (each Gemini call), then the consensus — so both are visible.
-  frag.appendChild(aiPanel(
-    `Desempenho da IA — análises individuais${ind.analysesGraded ? ` (${ind.analysesGraded})` : ""}`,
-    "Nenhuma análise individual verificável ainda.", ind));
-  frag.appendChild(aiPanel(
-    "Desempenho da IA — consenso",
-    "Nenhum consenso verificável ainda.", con));
-  return frag;
-}
-
-function dashTable(headHtml, rowsHtml) {
-  const wrap = el("div", "scroll"); const t = el("table", "rwd");
-  t.innerHTML = headHtml + rowsHtml;
-  wrap.appendChild(t); return wrap;
-}
-
-function renderDashboard(root, d) {
-  root.innerHTML = "";
-  if (!d.matchesEvaluated) { root.innerHTML = '<p class="muted">Ainda não há jogos finalizados para avaliar.</p>'; return; }
-  root.appendChild(el("p", "muted", `Baseado em ${d.matchesEvaluated} jogo(s) finalizado(s). Previsões pré-jogo (forma só de jogos anteriores).`));
-
-  const dir = d.markets.direction || {};
-  const three = el("div", "three"); three.style.marginBottom = "14px";
-  three.innerHTML = `
-    <div><div class="v" style="color:${pColor(d.markets.overall.rate)}">${pct(d.markets.overall.rate)}</div><div class="l">Acerto geral (${d.markets.overall.hits}/${d.markets.overall.total})</div></div>
-    <div><div class="v" style="color:${pColor(d.result.accuracy)}">${pct(d.result.accuracy)}</div><div class="l">Resultado 1X2 (${d.result.correct}/${d.result.total})</div></div>
-    <div><div class="v">${d.result.avgBrier}</div><div class="l">Brier médio</div></div>
-    <div><div class="v" style="color:${pColor((dir.over||{}).rate)}">${pct((dir.over||{}).rate)}</div><div class="l">Over (${(dir.over||{}).hits||0}/${(dir.over||{}).total||0})</div></div>
-    <div><div class="v" style="color:${pColor((dir.under||{}).rate)}">${pct((dir.under||{}).rate)}</div><div class="l">Under (${(dir.under||{}).hits||0}/${(dir.under||{}).total||0})</div></div>`;
-  root.appendChild(three);
-
-  const grid = el("div", "grid");
-
-  // by market (with avg confidence vs hit-rate -> per-market calibration)
-  const mc = el("div", "card"); mc.appendChild(el("h3", null, "Acerto por mercado"));
-  const sorted = Object.entries(d.markets.byMarket).sort((a, b) => (b[1].rate || 0) - (a[1].rate || 0));
-  let mrows = "";
-  for (const [k, v] of sorted)
-    mrows += `<tr><td class="t">${k}</td><td class="p" data-label="Acertos">${v.hits}/${v.total}</td>`
-      + `<td class="p" data-label="Taxa">${pc(v.rate)}</td><td class="p" data-label="Conf. média">${v.avgConf!=null?pct(v.avgConf):"–"}</td></tr>`;
-  mc.appendChild(dashTable('<tr class="hr"><th>Mercado</th><th class="p">Acertos</th><th class="p">Taxa</th><th class="p">Conf. média</th></tr>', mrows));
-  mc.appendChild(el("p", "muted", "Conf. média ≈ Taxa indica mercado bem calibrado; Conf. > Taxa = confiante demais."));
-  grid.appendChild(mc);
-
-  // bias: predicted vs actual per stat
-  if (d.bias && d.bias.length) {
-    const bc = el("div", "card"); bc.appendChild(el("h3", null, "Viés do modelo (previsto × real)"));
-    let brows = "";
-    for (const b of d.bias) {
-      const col = Math.abs(b.error) >= 1 ? "var(--warn)" : "var(--muted)";
-      brows += `<tr><td class="t">${b.label}</td><td class="p" data-label="Previsto (méd)">${b.predicted}</td>`
-        + `<td class="p" data-label="Real (méd)">${b.actual}</td><td class="p" data-label="Erro" style="color:${col}">${b.error>0?"+":""}${b.error}</td></tr>`;
-    }
-    bc.appendChild(dashTable('<tr class="hr"><th>Estatística</th><th class="p">Previsto (méd)</th><th class="p">Real (méd)</th><th class="p">Erro</th></tr>', brows));
-    bc.appendChild(el("p", "muted", "Erro = previsto − real (média por jogo). Positivo = modelo superestima o total."));
-    grid.appendChild(bc);
-  }
-
-  // calibration
-  const cc = el("div", "card"); cc.appendChild(el("h3", null, "Calibração (confiança × realidade)"));
-  let crows = "";
-  for (const c of d.calibration)
-    crows += `<tr><td class="t">${c.range}</td><td class="p" data-label="n">${c.n}</td><td class="p" data-label="Previsto">${pc(c.predicted)}</td><td class="p" data-label="Real">${pc(c.actual)}</td></tr>`;
-  cc.appendChild(dashTable('<tr class="hr"><th>Confiança</th><th class="p">n</th><th class="p">Previsto</th><th class="p">Real</th></tr>', crows));
-  cc.appendChild(el("p", "muted", "Previsto ≈ Real significa modelo bem calibrado."));
-  grid.appendChild(cc);
-
-  root.appendChild(grid);
-
-  // per match (richer)
-  const pm = el("div", "card"); pm.style.marginTop = "12px"; pm.appendChild(el("h3", null, "Por jogo"));
-  let prows = "";
-  for (const m of d.perMatch)
-    prows += `<tr><td class="t">${m.home} x ${m.away}</td><td class="p" data-label="Placar">${m.score}</td>`
-      + `<td class="p" data-label="1X2 (palpite)">${m.resultPick} ${pc(m.resultProb)} ${chk(m.resultCorrect)}</td>`
-      + `<td class="p" data-label="Mercados">${m.marketHits}/${m.marketTotal} ${pc(m.marketHitRate)}</td></tr>`;
-  pm.appendChild(dashTable('<tr class="hr"><th>Jogo</th><th class="p">Placar</th><th class="p">1X2 (palpite)</th><th class="p">Mercados</th></tr>', prows));
-  root.appendChild(pm);
+function copyQuote(){
+  if(!CART.length){ return; }
+  const lines=['*Orçamento*',''];
+  let tot=0;
+  for(const it of CART){ const cu=clientUnit(it), qty=it.qty||1; if(cu==null) continue; const sub=cu*qty; tot+=sub;
+    lines.push(`• ${it.name} — ${qty}x ${brl(cu)} = ${brl(sub)}`); }
+  lines.push('', `*Total: ${brl(tot)}*`);
+  const text=lines.join('\n');
+  navigator.clipboard.writeText(text).then(()=>{ const b=event&&event.target; if(b){const t=b.textContent;b.textContent='✓ copiado';setTimeout(()=>b.textContent=t,1200);} },
+    ()=>alert('Copie manualmente:\n\n'+text));
 }
 
 boot();

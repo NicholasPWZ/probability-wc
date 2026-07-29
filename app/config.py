@@ -9,30 +9,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # Gemini (optional)
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    # Single shared password to enter the app (empty = app is locked until set).
+    app_password: str = ""
+    # Signs the session cookie. Set a long random value in production.
+    secret_key: str = "dev-insecure-change-me"
+    # Fernet key (base64, 32 bytes) to encrypt stored supplier tokens. If empty, a key
+    # is generated and persisted to <cache_dir>/fernet.key on first run.
+    fernet_key: str = ""
 
-    # Admin token required to change the Gemini key from the UI (leave empty to
-    # disable UI editing). Set a long random value.
-    admin_token: str = ""
-
-    # Tournament (FotMob league id 77 = FIFA World Cup; season defaults to 2026)
-    league_id: int = 77
-    season: str = "2026"
-
-    # Scraping
-    recent_matches: int = 6
-    max_concurrency: int = 4
-    cache_ttl: int = 3600
     cache_dir: str = ".cache"
-
-    # Display
-    display_tz: str = "America/Sao_Paulo"
-
-    @property
-    def gemini_enabled(self) -> bool:
-        return bool(self.gemini_api_key.strip())
+    request_timeout: int = 25       # per-request seconds for supplier scraping
+    search_ttl: int = 120           # seconds to cache a (supplier, query) search result
+    session_max_age: int = 30 * 24 * 3600  # app login cookie lifetime
 
 
 @lru_cache

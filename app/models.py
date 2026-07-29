@@ -4,16 +4,35 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
-class AnalyzeUrlRequest(BaseModel):
-    url: str
+class LoginRequest(BaseModel):
+    password: str
 
 
-class GeminiSettingsRequest(BaseModel):
+class SupplierUpsert(BaseModel):
+    key: str                      # adapter key (e.g. "pauta")
+    name: str | None = None
+    baseUrl: str | None = None
+    enabled: bool | None = None
+    note: str | None = None
+
+
+class TokenRequest(BaseModel):
     token: str
-    apiKey: str | None = None
-    model: str | None = None
 
 
-class GeminiRunRequest(BaseModel):
-    action: str | None = None   # "new_section" (admin-gated) or None = progress active section
-    token: str | None = None    # admin token, required when action == "new_section"
+class SiteConfig(BaseModel):
+    """User-defined generic site (configured from the UI, no code)."""
+    key: str
+    name: str
+    baseUrl: str
+    searchUrl: str                 # must contain {q}
+    authMode: str = "cookie"       # cookie | header | none
+    priceLocale: str = "br"        # br | us
+    selectors: dict = {}           # {item, name, price, link, image, stock}
+    linkAttr: str = "href"
+    imageAttr: str = "src"
+    token: str | None = None       # optional; set/replace the auth token
+
+
+class SiteTest(SiteConfig):
+    query: str = "teste"           # sample term for a dry-run parse

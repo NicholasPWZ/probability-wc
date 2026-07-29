@@ -1,112 +1,98 @@
-# CLAUDE.md — Contexto do projeto
+# CLAUDE.md — Compubot (comparador de fornecedores)
 
-App de **pesquisa para apostas** na **Copa do Mundo 2026**. A página lista todos os jogos
-agrupados por dia (horário de Brasília); ao expandir um jogo, mostra **probabilidades calculadas
-por uma engine estatística própria** para todos os mercados. Stack: **Python/FastAPI** atrás de
-**nginx**, em VPS. Rodando em produção: **https://compubot.online**.
+App **web para revendedor** comparar o **preço de um produto em vários fornecedores** ao mesmo
+tempo. O revendedor cola o **token/cookie de autenticação** de cada fornecedor (logado) para o
+scraper enxergar o **preço de revenda** (que só aparece logado). Busca por **texto livre**, resultados
+lado a lado por fornecedor. Stack: **Python/FastAPI** atrás de **nginx**, na mesma VPS/URL de antes.
 
-## Princípio central
-A **engine estatística própria** (`app/analysis/engine.py`) é o analista primário. **O Gemini é
-opcional** — só roda quando o usuário clica "deixar a IA analisar" (botão por jogo), como segunda
-opinião sobre os números calculados. O app funciona 100% sem `GEMINI_API_KEY`. Lógica de análise
-nova vai na engine, não no prompt.
+> Histórico: este repo era um app de apostas da Copa 2026 (FotMob + engine estatística + Gemini).
+> Foi **pivotado**; todo o código antigo está no histórico do git (não recriar). Reaproveitado:
+> `app/scraper/client.py` (curl_cffi com impersonate Chrome), o esqueleto FastAPI, o shell da UI e o
+> deploy (nginx + systemd + TLS na mesma URL).
 
-## Fonte de dados
-**FotMob `/api/data`** (matchDetails, leagues?id=77 temporada 2026, teams?id=) via `curl_cffi`
-(impersonate Chrome). **SofaScore, FBref e RedScores são bloqueados** (Cloudflare/IP de datacenter)
-— não tentar voltar pra eles. Cache em disco em `.cache/` (gitignored).
+## Como funciona
+- **Login**: senha única (`APP_PASSWORD`) → cookie de sessão assinado por HMAC (`app/auth.py`).
+- **Fornecedores**: cada site é um **adapter** em `app/suppliers/` que sabe (a) montar uma sessão
+  autenticada a partir do token salvo, (b) buscar por texto e parsear produtos/preços, (c) checar se
+  a sessão ainda está logada. Registrados em `app/suppliers/__init__.py`.
+- **Token**: o revendedor cola o token (ex.: o header `cookie` inteiro). Guardado **criptografado**
+  (Fernet) em `.cache/suppliers.json` (gitignored). Chave em `FERNET_KEY` ou auto-gerada em
+  `.cache/fernet.key`.
+- **Renovação sem novo login**: depois de cada uso, o adapter re-serializa o cookie jar e persiste
+  qualquer token renovado (`dump_token`). Para sessões de cookie deslizante (ASP.NET/nopCommerce),
+  isso mantém a sessão viva enquanto o app é usado. **On-demand**: renova no uso; sem scheduler.
+- **Busca**: `GET /api/search?q=` faz fan-out concorrente (ThreadPoolExecutor) em todos os
+  fornecedores ativos com token, cacheia por `SEARCH_TTL` (120s), devolve produtos por fornecedor.
 
-## Mercados (todos calculados pela engine)
-- **Gols/resultado**: 1X2, dupla chance, over/under, ambos marcam, placar exato, handicap asiático
-  (matriz de placar Poisson + Dixon-Coles, `DC_RHO=-0.05`).
-- **Mercados de time**: escanteios, finalizações, chutes no alvo, cartões, faltas (Poisson/NegBin O/U).
-- **Mercados de jogador**: chutes, faltas (O/U), cartões (P>=1). XI confirmado quando a escalação
-  é confirmada; senão, seleção por form recente (provisório).
-- Todo cálculo **combina o "contra" do adversário** com o "a favor" do time.
+## Adapter: pauta.com.br (`app/suppliers/pauta.py`) — validado ao vivo
+- Loja **nopCommerce (ASP.NET Core)**. Auth = cookie **`.Nop.Authentication`** (sem JWT/refresh).
+  Sessão **deslizante** → renova recapturando o `Set-Cookie`. Token pasteado funciona **do servidor**
+  (sem bind de IP).
+- **GOTCHA**: cookies têm que ir no **jar** (não só header) senão o 301 `www`→apex os derruba. Sempre
+  usar o apex `https://pauta.com.br`.
+- Busca: `GET /search?q=TERM` (server-rendered). Produtos em `div.product-item.cardProduct` com
+  `data-productid`; título em `h3.title a[title]`; url no `href`; img `src`; marca/SKU/part-number.
+  **Preço é uma TABELA em tiers**: linhas `UF | QTD | Preço | ST` — o parser pega o **menor preço** e
+  soma o estoque. Formato de moeda BR (vírgula decimal).
+- Detecção de expiração: se a busca volta produtos **sem preço**, provavelmente deslogou → UI mostra
+  aviso e o botão "Testar" confirma via `GET /customer/info` (302→/login = expirado).
 
-## Engine — calibração atual (o que ficou, e ajudou)
-Constantes em `app/analysis/engine.py`: `STRENGTH_SHRINK_K=5` (encolhe força à média),
-`DISPERSION_FLOOR=1.4` (piso de superdispersão NegBin), `PROB_CAP=0.93` (teto de confiança),
-`GOALS_CAL_K=0.85` (calibração das binárias de gols),
-`STAT_CORRECTION={"shots": 1.12, "yellowCards": 0.80}` (correção estrutural: chutes +12%,
-**resfriamento de cartões de time -20%**). Cartão de jogador pontuado de forma honesta (só o lado
-"recebe cartão" para risco >=30%).
+## Layout / rotas
+- `app/main.py` (rotas), `app/auth.py` (senha+sessão), `app/store.py` (JSON + Fernet),
+  `app/config.py` (env), `app/suppliers/` (base + adapters), `app/scraper/client.py` (cliente
+  curl_cffi genérico, reaproveitado), `app/static/index.html` (SPA, JS puro, tema escuro).
+- Rotas (todas exigem sessão exceto config/login): `GET /`, `GET /api/config`, `POST /api/login`,
+  `POST /api/logout`, `GET /api/adapters`, `GET/PUT /api/suppliers`, `POST /api/suppliers/{key}/token`,
+  `POST /api/suppliers/{key}/test`, `DELETE /api/suppliers/{key}`, `POST /api/sites` (criar/editar site
+  genérico), `POST /api/sites/test` (parse a seco), `GET /api/search?q=`. `app = compubot`.
+- UI (SPA em `index.html`, tudo client-side): login → 3 abas.
+  - **Buscar**: uma busca → **tabela unificada de TODOS os fornecedores** (thumb, produto c/ link,
+    fornecedor, estoque, preço, "abrir"), **ordenável** (Preço ↑/↓, Nome, Fornecedor, Estoque). Botão
+    "+ carrinho" por item.
+  - **Carrinho** (quoting, `localStorage` — sem backend): itens com custo/qtd/margem editáveis,
+    **margem % padrão** + override por item → calcula **preço ao cliente**, mostra custo/total/lucro,
+    "Copiar orçamento" (texto pronto pro cliente).
+  - **Fornecedores**: adicionar adapter embutido + token; **criar site por seletores** (com Testar);
+    testar sessão; ativar/remover; editar sites genéricos.
 
-**Medido em 28 jogos finalizados e MANTIDO** (validado no `/api/dashboard` ao vivo):
-- `COUNT_CAL_K=0.90` — encolhe a confiança das O/U de contagem (time/jogador) em direção a 0.5
-  **depois** de escolher o lado (não muda hit-rate; só calibra). Corrige superconfiança medida no
-  topo (90-100% previa .93/acertava .88). callBrier .1862→.1855. Risco ~zero.
-- `GOALS_CORRECTION=1.08` — gols eram **sub-previstos** (média prevista ~2.63 vs real ~3.18, ~17%).
-  Escala as duas médias de gols. **BTTS subiu .46→.64**, Brier do 1X2 .618→.607, Gols O/U estável.
-  FLAG: remedir conforme mais jogos terminam e no mata-mata.
-- `HFA=1.04` — vantagem do time listado primeiro (sede neutra na Copa → na real captura seeding que
-  falta). Modelo escolhia empate 0/28 e exagerava no "away". Conservador (1.04) pega o ganho de
-  Brier do 1X2 sem overfit do artefato de ordem-de-listagem. FLAG: arrumar de verdade com feature
-  de ranking/seeding, não multiplicador posicional.
+## Sites configuráveis pelo usuário (sem código) — `app/suppliers/generic.py`
+A UI (aba Fornecedores → "Criar / editar site por seletores") permite adicionar qualquer loja
+**HTML server-rendered** informando: `searchUrl` (com `{q}`), modo de auth (cookie/header/none),
+formato de preço (br/us) e **seletores CSS** (item, nome, preço, link, imagem, estoque). Salvo como
+`kind:"generic"` com `config` no store (token criptografado). `GenericAdapter` faz o scraping via
+BeautifulSoup (`bs4`, dep nova). Botão **Testar** (`POST /api/sites/test`) faz um parse a seco e mostra
+os itens/preços pra ajustar os seletores antes de salvar (`POST /api/sites`).
+- **Limite honesto**: só funciona em sites **server-rendered**. Sites JS-rendered (produtos via
+  AJAX/JSON) precisam de adapter em código. Auth pelo modo cookie (jar) ou header ("Nome: valor").
+- `_resolve_adapter(key)` em `main.py` devolve o adapter embutido OU um `GenericAdapter` do config.
 
-**Testado e NÃO ajudou / NÃO manter** (revertido): Elo de seleções e xG (pioram na amostra caótica
-de fase de grupos — talvez ajudem no mata-mata, remedir depois). Resfriar cartão de **jogador**
-(`PLAYER_CARD_SHRINK_K`) esvazia o mercado (34→12 calls abaixo do limiar de 30%; o "ganho" .27→.50 é
-artefato de denominador móvel) — **confirmado, não fazer** (knob fica no código como no-op).
-Corrigir o viés de **faltas** (~-7%) corrigia o viés mas **baixava** o acerto de faltas e o geral —
-não manter.
-
-## Como melhorar o modelo (regra)
-Toda mudança na engine deve ser **medida antes de manter**: rodar local → reiniciar →
-`GET /api/dashboard` (avalia jogos finalizados: acerto por mercado, calibração, **viés
-previsto-vs-real**, Brier, geral) → comparar antes/depois → **manter só se melhorar** sem degradar
-o resto. Se não melhora, reverter. (O dashboard em frio retorna 0 avaliados; aquecer `/api/matches`
-primeiro. Chaves de mercado têm acento — buscar por substring, não string literal, em scripts.)
-
-## Layout / endpoints
-- `app/scraper/` (client, endpoints, fixtures, aggregator), `app/analysis/` (engine, gemini, prompt,
-  accuracy, referee), `app/runtime.py` (override de config em runtime → `.cache/runtime.json`),
-  `app/main.py` (rotas), `app/static/index.html` (UI single-page, JS puro).
-- Rotas: `/api/matches`, `/api/analyze/{id}`, `/api/refresh/{id}`, `/api/gemini/{id}` (GET+POST),
-  `/api/dashboard`, `/api/reliability`, `/api/best-bets`, `/api/ai-performance`, `/api/config`,
-  `/api/settings/gemini`. `app = betstats`, servido na **raiz**.
-- Features na UI: lista por dia + atualizar escalação; detalhe em sub-abas (Resumo/Gols/Mercados/
-  Jogadores/IA) + destaques (top-3 + combos) + copiar; melhores palpites (mercados/jogadores,
-  ordenável, valor/EV com odds manuais, caps de variedade); confiabilidade por mercado; desempenho
-  (calibração/viés/Brier/por jogo); IA Gemini (2 análises + 1 consenso persistido) + desempenho da
-  IA por confiança; painel de config (editor de chave/modelo guardado por `ADMIN_TOKEN`). Tema escuro
-  enterprise, ícones SVG, mobile (tabelas viram cards).
+## Adicionar um novo fornecedor — 2 caminhos
+1. **Pela UI (fácil)**: criar um "site por seletores" (acima). Serve pra lojas server-rendered simples.
+2. **Por código (robusto)**: criar `app/suppliers/<nome>.py` com uma `SupplierAdapter` (`build_session`,
+   `dump_token`, `check_auth`, `search`), registrar em `app/suppliers/__init__.py`. Necessário quando o
+   site é JS-rendered, tem preço em estrutura complexa (ex.: tabela em tiers como o pauta) ou auth
+   especial. Descobrir auth/preço inspecionando o tráfego real (HAR / "Copy as cURL").
 
 ## Rodar local (Windows)
 ```
+$env:APP_PASSWORD="uma-senha"; $env:SECRET_KEY="algo-aleatorio"
 ./.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
+`.env` (gitignored): `APP_PASSWORD`, `SECRET_KEY`, `FERNET_KEY` (opcional), `SEARCH_TTL` (opcional).
 
-## Deploy
-VPS RHEL, código em `/opt/probability-wc`, systemd `probability-wc` (gunicorn+uvicorn worker) em
-`127.0.0.1:8001`, nginx proxia `/` → `:8001`, TLS certbot. Repo:
-https://github.com/NicholasPWZ/probability-wc.
-Atualizar: `cd /opt/probability-wc && git pull && sudo systemctl restart probability-wc`.
-`.env` é gitignored (criado na VPS): `GEMINI_API_KEY`, `GEMINI_MODEL`, `ADMIN_TOKEN`.
+## Deploy (mesma VPS/URL)
+VPS RHEL, systemd (gunicorn+uvicorn) atrás do nginx em `127.0.0.1:8001`, TLS certbot, mesma URL.
+`git pull && sudo systemctl restart <serviço>`. Definir `APP_PASSWORD`/`SECRET_KEY`/`FERNET_KEY` no
+`.env` da VPS (senão os tokens salvos não descriptografam entre restarts — sem `FERNET_KEY` fixo, use
+o `.cache/fernet.key` gerado, que deve persistir).
 
-### Gemini — config e gotchas
-- `GEMINI_MODEL` válido: `gemini-2.5-flash` (default), `gemini-2.0-flash`, `gemini-1.5-flash`.
-  **`gemini-3.5-flash` NÃO existe** → causava **HTTP 500** em todo call. `gemini.py` agora captura
-  o erro real da API e devolve 503 com mensagem clara que a UI mostra.
-- `ADMIN_TOKEN` (default `""`): vazio = **editor de chave na UI desativado** (`/api/settings/gemini`
-  → 403). Definir um segredo no `.env` pra liberar; sem ele, trocar a chave só via `.env` + restart.
-
-### Gemini — dados, prompt e avaliação (enriquecido)
-- O prompt (`prompt.py` `build_contents`) agora envia **muito mais dado**: `playerProps` (top 6/lado,
-  com linhas que a engine precificou — antes a IA não recebia NADA de jogador, então inventava),
-  `calibrationContext` (viés medido previsto-vs-real + split over/under como **priors soft**),
-  `resultPrior` (taxa de empate ~36%), `availableLines`, taxas **contra** do adversário por stat,
-  `doubleChance` e `teamProps` com `{expected, lines}` por escopo. Prompt ~26KB.
-- Cada palpite carrega campos **estruturados gradeáveis**: `marketKey` (enum), `side`, `line`,
-  `scope`, `playerId`/`playerName`. `_grade_ai_bet` usa eles (fallback regex/nome só p/ registros
-  antigos sem `marketKey`). **`/api/ai-performance` agora avalia TODAS as análises individuais E o
-  consenso** (não só o consenso), com breakdown por mercado + calibração/Brier da IA + contagem de
-  não-graváveis. UI mostra dois painéis (análises individuais + consenso).
-- **GOTCHA**: `response_schema` é subset OpenAPI. Após mudar o schema, **rodar 1 call real do Gemini**
-  pra confirmar que ele aceita os enums/`playerId` int — se rejeitar, o call **500a** (histórico).
-  Não dá pra testar local sem `GEMINI_API_KEY`.
+## Segurança / realidade
+- Tokens de fornecedor são **secretos** → criptografados em repouso; `.cache/` é gitignored. Nunca
+  commitar `.cache/`, `.env`, nem tokens.
+- Scraping por-fornecedor é **frágil** e específico: quebra quando o site muda; captcha/2FA/anti-bot
+  podem impedir. curl_cffi (impersonate Chrome) ajuda com Cloudflare/TLS, não com captcha.
+- É acesso à **conta do próprio revendedor** (autorizado). Cada fornecedor novo = manutenção contínua.
 
 ## Convenções de commit
-Commitar **como o usuário (Nicholas)**, **sem `Co-Authored-By` / sem referência a Claude**.
-**O push é do usuário** — não dar `git push`. Mensagens em português, sem acentos (evita problema de
-encoding no shell). Não commitar arquivos de scratch/debug (`*.json` temporários) nem `.env`/`.cache/`.
+Commitar **como o usuário (Nicholas)**, sem `Co-Authored-By`/referência a Claude. **O push é do
+usuário.** Mensagens em português sem acento (evita encoding no shell). Não commitar scratch/`.env`/`.cache/`.
