@@ -67,33 +67,48 @@ def login(key: str, watch: bool = False) -> str | None:
         return None  # a login is already in progress for this supplier
     try:
         try:
-            from camoufox.sync_api import Camoufox
+            from camoufox.sync_api import Camoufox  # noqa: F401
         except Exception as exc:
             print(f"[autologin] Camoufox indisponivel: {exc}")
             return None
-        headless = False if watch else _headless_mode()
-        with Camoufox(headless=headless) as browser:
-            page = browser.new_page()
-            page.goto(recipe["loginUrl"], wait_until="domcontentloaded", timeout=45000)
-            page.fill(recipe["user"], user)
-            page.fill(recipe["pw"], pwd)
-            page.click(recipe["submit"])
-            try:
-                page.wait_for_load_state("networkidle", timeout=30000)
-            except Exception:
-                pass
-            try:
-                ok = bool(recipe["success"](page))
-            except Exception:
-                ok = True
-            cookies = page.context.cookies()
-        if not ok:
-            print(f"[autologin] {key}: login nao confirmado (ainda em {recipe['loginUrl']})")
-        jar = "; ".join(f"{c['name']}={c['value']}" for c in cookies
-                        if recipe["domain"] in (c.get("domain") or ""))
-        return jar or None
-    except Exception as exc:
-        print(f"[autologin] {key} falhou: {exc}")
-        return None
+        mode = False if watch else _headless_mode()
+        try:
+            return _run_login(key, recipe, user, pwd, mode)
+        except Exception as exc:
+            # "virtual" needs the Xvfb binary; if it's missing, fall back to native headless
+            from camoufox.exceptions import VirtualDisplayError
+            if mode == "virtual" and isinstance(exc, VirtualDisplayError):
+                print(f"[autologin] {key}: Xvfb indisponivel ({exc}); tentando headless nativo")
+                try:
+                    return _run_login(key, recipe, user, pwd, True)
+                except Exception as exc2:
+                    print(f"[autologin] {key} falhou (nativo): {exc2}")
+                    return None
+            print(f"[autologin] {key} falhou: {exc}")
+            return None
     finally:
         lock.release()
+
+
+def _run_login(key, recipe, user, pwd, headless) -> str | None:
+    from camoufox.sync_api import Camoufox
+    with Camoufox(headless=headless) as browser:
+        page = browser.new_page()
+        page.goto(recipe["loginUrl"], wait_until="domcontentloaded", timeout=45000)
+        page.fill(recipe["user"], user)
+        page.fill(recipe["pw"], pwd)
+        page.click(recipe["submit"])
+        try:
+            page.wait_for_load_state("networkidle", timeout=30000)
+        except Exception:
+            pass
+        try:
+            ok = bool(recipe["success"](page))
+        except Exception:
+            ok = True
+        cookies = page.context.cookies()
+    if not ok:
+        print(f"[autologin] {key}: login nao confirmado (ainda em {recipe['loginUrl']})")
+    jar = "; ".join(f"{c['name']}={c['value']}" for c in cookies
+                    if recipe["domain"] in (c.get("domain") or ""))
+    return jar or None
