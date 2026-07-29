@@ -249,6 +249,7 @@ async function renderSuppliers(){
         <td><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSupplier('${s.key}',this.checked)" style="width:auto"></td>
         <td class="row" style="justify-content:flex-end">
           <button class="btn small primary" onclick="rowToken('${s.key}')">Colar token</button>
+          ${s.canAutologin?`<button class="btn small" onclick="reloginSupplier('${s.key}')" title="Logar via navegador e renovar o token">Renovar login</button>`:''}
           ${s.kind==='generic'?`<button class="btn small" onclick="editSite('${s.key}')">Editar</button>`:''}
           <button class="btn small" onclick="testSupplier('${s.key}')">Testar</button>
           <button class="btn small danger" onclick="delSupplier('${s.key}')">Remover</button>
@@ -256,6 +257,14 @@ async function renderSuppliers(){
   }catch(e){ box.innerHTML='<p class="err">'+e.message+'</p>'; }
 }
 async function toggleSupplier(key,enabled){ try{ await api('/api/suppliers',{method:'PUT',body:JSON.stringify({key,enabled})}); }catch(e){} }
+async function reloginSupplier(key){
+  const el = $('#test-'+key); if(el) el.innerHTML='<span class="spin"></span> logando…';
+  try{
+    const r = await api('/api/suppliers/'+key+'/relogin',{method:'POST'});
+    if(el) el.innerHTML = r.ok? '<span class="pill ok">renovado</span>' : '<span class="pill no">falhou</span>';
+    renderSuppliers();
+  }catch(e){ if(el) el.innerHTML='<span class="err">'+e.message+'</span>'; }
+}
 async function testSupplier(key){
   const el = $('#test-'+key); el.innerHTML='<span class="spin"></span>';
   try{ const r = await api('/api/suppliers/'+key+'/test',{method:'POST'});

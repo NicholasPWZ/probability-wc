@@ -86,7 +86,11 @@ async def api_adapters():
 
 @compubot.get("/api/suppliers", dependencies=[Depends(auth.require_auth)])
 async def api_suppliers():
-    return {"suppliers": store.list_suppliers()}
+    from app import autologin
+    rows = store.list_suppliers()
+    for r in rows:
+        r["canAutologin"] = autologin.can_autologin(r["key"])
+    return {"suppliers": rows}
 
 
 @compubot.put("/api/suppliers", dependencies=[Depends(auth.require_auth)])
@@ -279,10 +283,13 @@ def _autologin_refresh(key: str) -> str | None:
 
 def _keepalive_once() -> None:
     for s in store.list_suppliers():
-        if not (s.get("enabled") and s.get("hasToken")):
+        if not s.get("enabled"):
             continue
         key = s["key"]
         try:
+            if not s.get("hasToken"):
+                _autologin_refresh(key)   # bootstrap first token when creds exist (no-op otherwise)
+                continue
             adapter = _resolve_adapter(key)
             token = store.get_token(key)
             if not adapter or not token:
