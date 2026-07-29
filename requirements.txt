@@ -2,6 +2,7 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 curl_cffi>=0.7.0
 beautifulsoup4>=4.12      # HTML parsing for user-configured (CSS-selector) sites
+camoufox>=0.5             # anti-detect Firefox for auto-login (browser via `camoufox fetch`)
 cryptography>=42.0        # Fernet encryption for stored supplier tokens
 pydantic>=2.6
 pydantic-settings>=2.2

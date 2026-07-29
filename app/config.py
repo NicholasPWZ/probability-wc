@@ -1,6 +1,7 @@
 """Application configuration loaded from environment / .env."""
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -10,6 +11,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # SAME regardless of the process working directory (gunicorn vs CLI wrote to different
 # .cache dirs when this was relative).
 _ROOT = Path(__file__).resolve().parent.parent
+
+# Load .env into os.environ so per-supplier login creds (<KEY>_USER / <KEY>_PASS) are
+# available for the auto-login (pydantic only reads the fixed fields below).
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_ROOT / ".env")
+except Exception:
+    pass
+
+
+def supplier_credentials(key: str) -> tuple[str | None, str | None]:
+    """Login user/password for a supplier from .env, e.g. DIGIMACRO_USER / DIGIMACRO_PASS."""
+    u = os.environ.get(f"{key.upper()}_USER")
+    p = os.environ.get(f"{key.upper()}_PASS")
+    return (u, p) if (u and p) else (None, None)
 
 
 class Settings(BaseSettings):
@@ -30,6 +46,8 @@ class Settings(BaseSettings):
     search_ttl: int = 120           # seconds to cache a (supplier, query) search result
     session_max_age: int = 30 * 24 * 3600  # app login cookie lifetime
     keepalive_minutes: int = 12     # background ping to keep supplier sessions alive (0 disables)
+    autologin_enabled: bool = True  # when a session expires, try to re-login via Camoufox
+    autologin_headless: str = ""    # "" = auto ("virtual" on Linux/Xvfb, True elsewhere)
 
 
 @lru_cache

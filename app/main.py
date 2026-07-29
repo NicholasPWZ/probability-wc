@@ -185,6 +185,19 @@ async def api_supplier_delete(key: str):
     return {"ok": True}
 
 
+@compubot.post("/api/suppliers/{key}/relogin", dependencies=[Depends(auth.require_auth)])
+async def api_supplier_relogin(key: str):
+    """Force a fresh login via Camoufox (uses .env credentials)."""
+    from app import autologin
+    if not autologin.can_autologin(key):
+        raise HTTPException(status_code=400,
+                            detail="Sem auto-login p/ este fornecedor (defina "
+                                   f"{key.upper()}_USER/_PASS no .env e a receita de login).")
+    tok = await run_in_threadpool(_autologin_refresh, key)
+    return {"ok": bool(tok), "authed": bool(tok),
+            "detail": "Sessão renovada via login." if tok else "Falha no auto-login (veja os logs)."}
+
+
 # --------------------------------------------------------------------------
 # search (fan out across enabled suppliers)
 # --------------------------------------------------------------------------
@@ -253,6 +266,17 @@ def _search_one_safe(key: str, query: str) -> dict:
 # keep-alive: periodically ping each supplier so sessions don't expire by inactivity,
 # and re-capture any refreshed cookie (sliding sessions). Extends token life a lot.
 # --------------------------------------------------------------------------
+def _autologin_refresh(key: str) -> str | None:
+    """Re-mint a supplier session via Camoufox (uses .env credentials). Persists the token."""
+    from app import autologin
+    if not (get_settings().autologin_enabled and autologin.can_autologin(key)):
+        return None
+    tok = autologin.login(key)
+    if tok:
+        store.set_token(key, tok)
+    return tok
+
+
 def _keepalive_once() -> None:
     for s in store.list_suppliers():
         if not (s.get("enabled") and s.get("hasToken")):
@@ -264,10 +288,12 @@ def _keepalive_once() -> None:
             if not adapter or not token:
                 continue
             session = adapter.build_session(token)
-            adapter.check_auth(session)              # fires an authenticated request
-            refreshed = adapter.dump_token(session)  # capture any renewed cookie
-            if refreshed and refreshed != token:
-                store.set_token(key, refreshed)
+            if adapter.check_auth(session):
+                refreshed = adapter.dump_token(session)   # capture any renewed cookie
+                if refreshed and refreshed != token:
+                    store.set_token(key, refreshed)
+            else:
+                _autologin_refresh(key)                   # expired -> re-login via Camoufox
         except Exception:
             pass
 
