@@ -278,6 +278,14 @@ function fmtAgo(ts){ // ts em segundos (epoch)
   return 'há '+Math.floor(s/86400)+'d';
 }
 function hasRegions(p){ return (p.tiers||[]).some(t=>t.region); }
+// linha de meta (marca · SKU · part number) — ignora valores nao-texto p/ nunca imprimir "[object Object]"
+function metaLine(p){
+  const parts=[];
+  if(typeof p.brand==='string' && p.brand.trim()) parts.push(p.brand.trim());
+  if(p.sku!=null && typeof p.sku!=='object' && String(p.sku).trim()) parts.push('SKU '+p.sku);
+  if(typeof p.part_number==='string' && p.part_number.trim()) parts.push(p.part_number.trim());
+  return parts.join(' · ');
+}
 // price cell: if a product has per-state (UF) tiers, show ALL of them (state · price · stock · ST)
 // each with its own "+" to add THAT state's price to the cart; otherwise a single price.
 // Sorting still uses the product's cheapest (p.price).
@@ -357,7 +365,7 @@ async function renderSuppliers(){
           ${s.tokenUpdated?`<div class="muted" style="font-size:11px">atualizado ${fmtAgo(s.tokenUpdated)}</div>`:''}
           ${LAST[s.key]?`<div style="font-size:11px;margin-top:2px">${LAST[s.key]}</div>`:''}</td>
         <td data-label="Ativo"><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSupplier('${s.key}',this.checked)" style="width:auto"></td>
-        <td class="row" style="justify-content:flex-end">
+        <td class="row acts" style="justify-content:flex-start">
           <button class="btn small primary" onclick="rowToken('${s.key}')">Colar token</button>
           ${s.canAutologin?`<button class="btn small" onclick="reloginSupplier('${s.key}')" title="Logar via navegador e renovar o token">Renovar login</button>`:''}
           ${s.kind==='generic'?`<button class="btn small" onclick="editSite('${s.key}')">Editar</button>`:''}
@@ -511,7 +519,7 @@ function renderResults(){
     items.map((p,i)=>`<tr>
       <td>${p.image?`<img src="${p.image}" class="thumb" onerror="this.style.visibility='hidden'">`:''}</td>
       <td data-label="Produto"><a href="${p.url}" target="_blank" rel="noopener"><b>${p.name}</b></a>
-        <div class="muted" style="font-size:12px">${[p.brand,p.sku?('SKU '+p.sku):null,p.part_number].filter(Boolean).join(' · ')}</div></td>
+        <div class="muted" style="font-size:12px">${metaLine(p)}</div></td>
       <td data-label="Fornecedor">${p.supplier}</td>
       <td class="p" data-label="Estoque">${p.in_stock===false?'<span class="warn">0</span>':(p.stock!=null?p.stock:'—')}</td>
       <td class="p" data-label="Preço" style="text-align:right">${priceCell(p,i)}</td>

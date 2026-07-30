@@ -28,6 +28,17 @@ def _brl(v):
     return "R$ " + f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if v else None
 
 
+def _as_text(v) -> str:
+    """Coerce a WMW field to a display string. `marca` sometimes comes as an object
+    ({dsMarca/nmMarca/...}); pick a name field instead of rendering '[object Object]'."""
+    if isinstance(v, dict):
+        for k in ("dsMarca", "nmMarca", "descricao", "nome", "label", "dsReduzida"):
+            if v.get(k):
+                return str(v[k]).strip()
+        return ""
+    return str(v).strip() if v not in (None, "") else ""
+
+
 class BraileAdapter(SupplierAdapter):
     key = "braile"
     name = "Braile Distribuidora"
@@ -115,7 +126,7 @@ class BraileAdapter(SupplierAdapter):
                 url=self._product_url(it),
                 price=price,
                 price_text=_brl(price),
-                brand=it.get("marca") or it.get("cdMarca"),
+                brand=_as_text(it.get("marca")) or _as_text(it.get("cdMarca")) or None,
                 sku=it.get("cdProduto"),
                 in_stock=(stock or 0) > 0 if stock is not None else None,
                 stock=int(stock) if stock else None,
