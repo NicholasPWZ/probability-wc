@@ -104,8 +104,11 @@
   /* ===== search ===== */
   .searchbar{display:flex;gap:10px}
   .searchbar input{font-size:16px;padding:13px 15px}
-  .search-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:18px;margin-top:16px;align-items:start}
+  .search-layout{display:grid;grid-template-columns:196px minmax(0,1fr);gap:18px;margin-top:16px;align-items:start}
   .results-area{min-width:0}
+  .meta{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.45}
+  .meta .sup{color:var(--text);font-weight:500}
+  .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
   .side{position:sticky;top:calc(var(--appbar-h) + 14px);align-self:start;
     background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;box-shadow:var(--shadow)}
   .side-title{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
@@ -123,7 +126,8 @@
   .placeholder{padding:44px 20px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:var(--r)}
 
   /* ===== responsive ===== */
-  @media(max-width:820px){
+  /* lateral fica AO LADO ate 640px; abaixo disso empilha como chips (junto com tabelas->cards) */
+  @media(max-width:640px){
     .search-layout{grid-template-columns:1fr}
     .side{position:static}
     .sup-list{flex-direction:row;flex-wrap:wrap;gap:7px}
@@ -151,7 +155,7 @@
     .rwd td.p{white-space:normal}
     .rwd td.p:has(.tiers){flex-direction:column;align-items:stretch;gap:6px}
     .rwd td.p:has(.tiers)::before{text-align:left}
-    .rwd td.row{justify-content:flex-end;flex-wrap:wrap}
+    .rwd td.row,.rwd td.acts{justify-content:flex-end;flex-wrap:wrap}
     td input{width:120px}
   }
 </style>
@@ -515,18 +519,20 @@ function renderResults(){
   if(warn.length) html += `<p class="warn" style="margin:6px 0">Sem preços em: ${warn.join(', ')} — sessão pode ter expirado (Testar em Fornecedores).</p>`;
   if(!items.length){ box.innerHTML = html + '<p class="muted">Nada encontrado.</p>'; return; }
   html += '<div class="scroll" style="margin-top:8px"><table class="rwd"><tr class="hr">'+
-    '<th></th><th>Produto</th><th>Fornecedor</th><th class="p">Estoque</th><th class="p">Preço</th><th></th></tr>' +
-    items.map((p,i)=>`<tr>
-      <td>${p.image?`<img src="${p.image}" class="thumb" onerror="this.style.visibility='hidden'">`:''}</td>
+    '<th></th><th>Produto</th><th class="p">Preço</th><th></th></tr>' +
+    items.map((p,i)=>{
+      const extra=metaLine(p);
+      const est = p.in_stock===false ? '<span class="warn">sem estoque</span>' : (p.stock!=null?('est. '+p.stock):'');
+      const meta = [`<span class="sup">${p.supplier}</span>`, extra||null, est||null].filter(Boolean).join(' · ');
+      return `<tr>
+      <td>${p.image?`<img src="${p.image}" class="thumb" onerror="this.style.display='none'">`:''}</td>
       <td data-label="Produto"><a href="${p.url}" target="_blank" rel="noopener"><b>${p.name}</b></a>
-        <div class="muted" style="font-size:12px">${metaLine(p)}</div></td>
-      <td data-label="Fornecedor">${p.supplier}</td>
-      <td class="p" data-label="Estoque">${p.in_stock===false?'<span class="warn">0</span>':(p.stock!=null?p.stock:'—')}</td>
-      <td class="p" data-label="Preço" style="text-align:right">${priceCell(p,i)}</td>
-      <td class="p row" style="justify-content:flex-end;gap:6px">
+        <div class="meta">${meta}</div></td>
+      <td class="p" data-label="Preço">${priceCell(p,i)}</td>
+      <td class="acts">
         ${hasRegions(p)?'':`<button class="btn small primary" onclick="addToCart(${i})" title="Adicionar ao carrinho">+ carrinho</button>`}
         <a href="${p.url}" target="_blank" rel="noopener" class="btn small">abrir</a></td>
-    </tr>`).join('') + '</table></div>';
+    </tr>`;}).join('') + '</table></div>';
   box.innerHTML = html;
 }
 
