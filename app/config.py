@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     search_ttl: int = 120           # seconds to cache a (supplier, query) search result
     session_max_age: int = 30 * 24 * 3600  # app login cookie lifetime
     keepalive_minutes: int = 12     # background ping to keep supplier sessions alive (0 disables)
+    search_filter: bool = True      # drop supplier results that don't actually match the query
     autologin_enabled: bool = True  # when a session expires, try to re-login via Camoufox
     autologin_headless: str = ""    # "" = auto ("virtual" on Linux/Xvfb, True elsewhere)
 

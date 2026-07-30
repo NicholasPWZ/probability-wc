@@ -208,6 +208,26 @@ async def api_supplier_relogin(key: str):
 _search_cache: dict[tuple, tuple] = {}   # (key, q) -> (ts, products)
 
 
+def _norm(s: str) -> str:
+    """lowercase + strip accents (para casar 'video' com 'vídeo')."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "")
+    return "".join(c for c in s if not unicodedata.combining(c)).lower()
+
+
+def _query_tokens(q: str) -> list[str]:
+    return [t for t in re.split(r"[^a-z0-9]+", _norm(q)) if len(t) >= 3]
+
+
+def _is_relevant(tokens: list[str], p: dict) -> bool:
+    """True se o produto casa com o termo: todos os tokens (>=3 chars) aparecem no
+    nome/marca/SKU/part-number. Corrige buscadores que devolvem 'destaques' quando nao acham."""
+    if not tokens:
+        return True
+    hay = _norm(" ".join(str(p.get(k) or "") for k in ("name", "brand", "sku", "part_number")))
+    return all(t in hay for t in tokens)
+
+
 def _search_one(key: str, query: str) -> dict:
     adapter = _resolve_adapter(key)
     if adapter is None:
@@ -229,9 +249,16 @@ def _search_one(key: str, query: str) -> dict:
             store.set_token(key, refreshed)   # renew-on-use (sliding session)
         _search_cache[ck] = (now, products)
     priced = [p for p in products if p.get("price") is not None]
-    needs_auth = bool(products) and not priced   # results but no prices → likely logged out
-    return {"key": key, "name": adapter.name, "ok": True, "count": len(products),
-            "needsAuth": needs_auth, "products": products}
+    needs_auth = bool(products) and not priced   # results but no prices → likely logged out (raw)
+    # relevance filter: some suppliers return "featured"/loose junk when they find nothing
+    shown = products
+    if get_settings().search_filter:
+        tokens = _query_tokens(query)
+        if tokens:
+            shown = [p for p in products if _is_relevant(tokens, p)]
+    return {"key": key, "name": adapter.name, "ok": True,
+            "count": len(shown), "rawCount": len(products),
+            "needsAuth": needs_auth, "products": shown}
 
 
 @compubot.get("/api/search", dependencies=[Depends(auth.require_auth)])

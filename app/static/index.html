@@ -376,8 +376,10 @@ function renderResults(){
   const warn = d.suppliers.filter(s=>s.needsAuth).map(s=>s.name||s.key);
   const items = [...d.items].sort(SORTS[CURRENT_SORT].fn);
   window._items = items;   // for add-to-cart by index
+  const rawTotal = okSup.reduce((n,s)=> n + (s.rawCount!=null?s.rawCount:(s.count||0)), 0);
+  const hidden = Math.max(0, rawTotal - items.length);
   let html = `<div class="row" style="justify-content:space-between">
-    <span class="muted">${items.length} produto(s) · ${okSup.length} fornecedor(es) · ${d.tookMs}ms</span>
+    <span class="muted">${items.length} produto(s) · ${okSup.length} fornecedor(es) · ${d.tookMs}ms${hidden?` · ${hidden} ocultado(s) por não bater a busca`:''}</span>
     <span class="row" style="gap:4px">Ordenar: ${Object.entries(SORTS).map(([k,v])=>`<button class="btn small ${k===CURRENT_SORT?'primary':''}" onclick="setSort('${k}')">${v.label}</button>`).join('')}</span>
   </div>`;
   if(badSup.length) html += '<p class="err" style="margin:6px 0">Falharam: '+badSup.map(s=>`${s.name||s.key} (${s.error||'erro'})`).join(' · ')+'</p>';
