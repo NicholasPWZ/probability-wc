@@ -262,13 +262,16 @@ def _search_one(key: str, query: str) -> dict:
 
 
 @compubot.get("/api/search", dependencies=[Depends(auth.require_auth)])
-async def api_search(q: str):
+async def api_search(q: str, suppliers: str = ""):
     q = (q or "").strip()
     if len(q) < 2:
         raise HTTPException(status_code=400, detail="Digite ao menos 2 caracteres.")
     active = [s["key"] for s in store.list_suppliers() if s["enabled"] and s["hasToken"]]
+    if suppliers:  # restrict to the chosen suppliers (checkboxes)
+        chosen = {k.strip() for k in suppliers.split(",") if k.strip()}
+        active = [k for k in active if k in chosen]
     if not active:
-        return {"query": q, "suppliers": [], "note": "Nenhum fornecedor configurado com token."}
+        return {"query": q, "suppliers": [], "note": "Nenhum fornecedor selecionado/configurado com token."}
 
     def _run():
         results = []

@@ -91,6 +91,7 @@
         <input id="q" placeholder="Buscar produto (ex.: garrafa tinta epson)" onkeydown="if(event.key==='Enter')doSearch()" />
         <button class="btn primary" onclick="doSearch()">Buscar</button>
       </div>
+      <div id="supplier-filter" class="row" style="margin-top:10px;gap:14px;font-size:13px;flex-wrap:wrap"></div>
       <div id="results" style="margin-top:16px"></div>
     </div>
 
@@ -210,7 +211,7 @@ async function doLogin(){
   catch(e){ $('#login-msg').textContent=e.message; }
 }
 async function doLogout(){ try{await api('/api/logout',{method:'POST'})}catch(e){} location.reload(); }
-function enterApp(){ $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); loadSuppliersMeta(); loadCart(); }
+function enterApp(){ $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); loadSuppliersMeta(); loadCart(); renderSupplierFilter(); }
 
 // ---------- views ----------
 function showView(v){
@@ -218,6 +219,7 @@ function showView(v){
     $('#view-'+n).classList.toggle('hidden', n!==v);
     $('#nav-'+n).classList.toggle('active', n===v);
   }
+  if(v==='search') renderSupplierFilter();
   if(v==='suppliers') renderSuppliers();
   if(v==='cart') renderCart();
 }
@@ -347,13 +349,33 @@ function editSite(key){
 }
 
 // ---------- search ----------
+// ---------- filtro de fornecedores (checkboxes) ----------
+function loadSel(){ try{ const v=JSON.parse(localStorage.getItem('compubot_sel')); return v?new Set(v):null; }catch(e){ return null; } }
+function saveSel(){ localStorage.setItem('compubot_sel', JSON.stringify(selectedSuppliers())); }
+function selectedSuppliers(){ return [...document.querySelectorAll('#supplier-filter input[data-sup]:checked')].map(c=>c.dataset.sup); }
+function onSelChange(){ saveSel(); }
+function toggleAllSup(v){ document.querySelectorAll('#supplier-filter input[data-sup]').forEach(c=>c.checked=v); saveSel(); }
+async function renderSupplierFilter(){
+  const box=$('#supplier-filter'); if(!box) return;
+  let list=[];
+  try{ list=(await api('/api/suppliers')).suppliers.filter(s=>s.enabled && s.hasToken); }catch(e){ box.innerHTML=''; return; }
+  if(!list.length){ box.innerHTML='<span class="muted">Nenhum fornecedor com token — configure em <a href="#" onclick="showView(\'suppliers\');return false">Fornecedores</a>.</span>'; return; }
+  const saved=loadSel();
+  box.innerHTML='<span class="muted">Buscar em:</span>'+
+    list.map(s=>{const on=saved?saved.has(s.key):true;
+      return `<label style="display:inline-flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" data-sup="${s.key}" ${on?'checked':''} onchange="onSelChange()" style="width:auto"> ${s.name||s.key}</label>`;}).join('')+
+    ` <a href="#" class="muted" onclick="toggleAllSup(true);return false">todos</a> · <a href="#" class="muted" onclick="toggleAllSup(false);return false">nenhum</a>`;
+}
+
 let LAST_SEARCH = null, CURRENT_SORT = 'price_asc';
 async function doSearch(){
   const q = $('#q').value.trim(); const box = $('#results');
   if(q.length<2){ box.innerHTML='<p class="muted">Digite ao menos 2 caracteres.</p>'; return; }
-  box.innerHTML='<p class="muted"><span class="spin"></span> Buscando em todos os fornecedores…</p>';
+  const sel = selectedSuppliers();
+  if(!sel.length){ box.innerHTML='<p class="muted">Selecione ao menos um fornecedor acima.</p>'; return; }
+  box.innerHTML='<p class="muted"><span class="spin"></span> Buscando em '+sel.length+' fornecedor(es)…</p>';
   try{
-    const data = await api('/api/search?q='+encodeURIComponent(q));
+    const data = await api('/api/search?q='+encodeURIComponent(q)+'&suppliers='+encodeURIComponent(sel.join(',')));
     if(data.note){ box.innerHTML='<p class="muted">'+data.note+' <a href="#" onclick="showView(\'suppliers\');return false">Configurar fornecedores</a></p>'; return; }
     LAST_SEARCH = data;
     // flatten all suppliers' products into one list, tagged with the supplier
