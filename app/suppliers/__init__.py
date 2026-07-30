@@ -33,6 +33,13 @@ SEED = [
                 "authMode": "cookie", "priceLocale": "br", "linkAttr": "href", "imageAttr": "data-src",
                 "selectors": {"item": ".product", "name": ".product-name", "price": ".current-price",
                               "link": ".product-info", "image": ".image img", "stock": ""}}},
+    # Tray como o multimarcas (loja=571937). Imagem ja vem no src (nao e placeholder tcdn).
+    {"key": "gaucha", "kind": "generic", "name": "Gaucha Distribuidora",
+     "baseUrl": "https://www.gauchadistribuidora.com.br",
+     "config": {"searchUrl": "https://www.gauchadistribuidora.com.br/loja/busca.php?loja=571937&palavra_busca={q}",
+                "authMode": "cookie", "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
+                "selectors": {"item": ".product", "name": ".product-name", "price": ".current-price",
+                              "link": ".product-info", "image": ".image img", "stock": ""}}},
 ]
 
 from app import store as _store
