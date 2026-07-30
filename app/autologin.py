@@ -39,6 +39,14 @@ RECIPES: dict[str, dict] = {
         "domain": "mazer.com.br",
         "success": lambda page: True,
     },
+    "multimarcas": {  # Tray, login SPA em 2 etapas
+        "loginUrl": "https://www.multimarcasdistribuidora.com.br/my-account/login",
+        "reveal": "text=Entrar",            # abre o form
+        "user": "#input-email", "userSubmit": "Enter",   # etapa 1 -> revela a senha
+        "pw": "#input-password", "submit": "#password-submit",
+        "domain": "multimarcasdistribuidora.com.br",
+        "success": lambda page: True,
+    },
 }
 
 _locks: dict[str, threading.Lock] = {}
@@ -116,6 +124,16 @@ def _run_login(key, recipe, user, pwd, headless) -> str | None:
             except Exception:
                 pass
         page.fill(recipe["user"], user, timeout=20000)
+        us = recipe.get("userSubmit")           # two-step logins: advance after the user field
+        if us:
+            if us == "Enter":
+                page.press(recipe["user"], "Enter")
+            else:
+                page.click(us)
+            try:
+                page.wait_for_selector(recipe["pw"], timeout=15000)   # wait for the password step
+            except Exception:
+                pass
         page.fill(recipe["pw"], pwd, timeout=20000)
         if recipe.get("submit"):
             page.click(recipe["submit"])

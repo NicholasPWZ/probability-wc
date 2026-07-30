@@ -281,7 +281,11 @@ def _autologin_refresh(key: str) -> str | None:
         return None
     adapter = _resolve_adapter(key)
     try:
-        if adapter and adapter.check_auth(adapter.build_session(tok)):
+        session = adapter.build_session(tok)
+        # check_auth is weak for generic sites (just a 200) — also require a search that
+        # actually returns prices, so a guest cookie from a failed login isn't saved.
+        if adapter and adapter.check_auth(session) and \
+                any(p.price is not None for p in adapter.search("mouse", session)):
             store.set_token(key, tok)
             return tok
     except Exception:
