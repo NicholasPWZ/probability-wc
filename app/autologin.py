@@ -47,6 +47,12 @@ RECIPES: dict[str, dict] = {
         "domain": "multimarcasdistribuidora.com.br",
         "success": lambda page: True,
     },
+    "agis": {  # Magento B2B (vendas.agis.com.br); login por e-mail na pagina dedicada
+        "loginUrl": "https://vendas.agis.com.br/customer/account/login/",
+        "user": "#email", "pw": "#pass", "submit": "#send2",
+        "domain": "vendas.agis.com.br",
+        "success": lambda page: "/customer/account/login" not in (page.url or ""),
+    },
     "braile": {  # WMW SPA, login num modal (abre por um trigger no header)
         "loginUrl": "https://www.brailedistribuidora.com.br/",
         # o click do Playwright nao abre o modal de forma confiavel; um .click() nativo no

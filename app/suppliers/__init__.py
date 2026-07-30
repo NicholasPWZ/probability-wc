@@ -41,6 +41,16 @@ SEED = [
                 "authMode": "none", "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
                 "selectors": {"item": ".product", "name": ".product-name", "price": ".current-price",
                               "link": ".product-info", "image": ".image img", "stock": ""}}},
+    # Agis (Magento B2B). Busca catalogsearch server-rendered; PRECO exige login (visitante ve
+    # "faca login") -> authMode cookie + auto-login (receita em autologin.py). Seletor de preco
+    # (.price-box .price) a confirmar no 1o login logado.
+    {"key": "agis", "kind": "generic", "name": "Agis",
+     "baseUrl": "https://vendas.agis.com.br",
+     "config": {"searchUrl": "https://vendas.agis.com.br/catalogsearch/result/?q={q}",
+                "authMode": "cookie", "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
+                "selectors": {"item": ".product-item", "name": ".product-item-link",
+                              "price": ".price-box .price", "link": ".product-item-link",
+                              "image": ".product-image-photo", "stock": ""}}},
 ]
 
 from app import store as _store
