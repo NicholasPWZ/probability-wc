@@ -96,6 +96,31 @@
   .tiers{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
   .tier-line{white-space:nowrap;padding:1px 0}
 
+  /* ===== fornecedores configurados: linhas uniformes, slots de acao fixos ===== */
+  .sup-row{display:grid;grid-template-columns:minmax(130px,1fr) 66px 140px 46px auto;gap:14px;
+    align-items:center;padding:11px 4px;border-bottom:1px solid var(--line)}
+  .sup-row:last-child{border-bottom:0}
+  .sup-head{padding:0 4px 9px;color:var(--muted);font-size:11.5px;text-transform:uppercase;
+    letter-spacing:.03em;font-weight:600;border-bottom:1px solid var(--line);margin-bottom:2px}
+  .sup-info{min-width:0}
+  .sup-info .url{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sup-token{display:flex;flex-direction:column;gap:2px;font-size:11px;line-height:1.35}
+  .sup-token>.pill{align-self:flex-start}
+  .sup-token .st-sub,.sup-token .st-res{min-height:15px;color:var(--muted)}  /* reserva a linha mesmo vazia */
+  .sup-ativo input{width:auto}
+  .sup-acts{display:grid;grid-template-columns:96px 108px 60px 60px 78px;gap:6px}
+  .sup-acts .btn{width:100%;padding-left:4px;padding-right:4px}
+  .sup-acts .slot{display:block}   /* mantem o slot vazio -> botoes sempre alinhados */
+  @media(max-width:900px){
+    .sup-head{display:none}
+    .sup-row{grid-template-columns:1fr;gap:9px;padding:14px 0}
+    .sup-token{flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px}
+    .sup-token .st-sub,.sup-token .st-res{min-height:0}
+    .sup-token .st-sub:empty,.sup-token .st-res:empty{display:none}
+    .sup-acts{grid-template-columns:repeat(auto-fill,minmax(108px,1fr))}
+    .sup-acts .slot{display:none}
+  }
+
   /* ===== login ===== */
   #login{max-width:380px;margin:14vh auto;padding:0 18px}
   #login .card{padding:26px;text-align:center}
@@ -361,21 +386,31 @@ async function renderSuppliers(){
   try{
     SUPPLIERS = (await api('/api/suppliers')).suppliers;
     if(!SUPPLIERS.length){ box.innerHTML='<p class="muted">Nenhum fornecedor ainda. Adicione um acima.</p>'; return; }
-    box.innerHTML = '<div class="scroll"><table class="rwd"><tr class="hr"><th>Fornecedor</th><th>Tipo</th><th>Token</th><th>Ativo</th><th></th></tr>' +
-      SUPPLIERS.map(s=>`<tr>
-        <td data-label="Fornecedor"><b>${s.name||s.key}</b><div class="muted" style="font-size:12px">${s.baseUrl||''}</div></td>
-        <td data-label="Tipo"><span class="pill">${s.kind==='generic'?'site':'embutido'}</span></td>
-        <td data-label="Token">${s.hasToken?'<span class="pill ok">salvo</span>':'<span class="pill no">ausente</span>'}
-          ${s.tokenUpdated?`<div class="muted" style="font-size:11px">atualizado ${fmtAgo(s.tokenUpdated)}</div>`:''}
-          ${LAST[s.key]?`<div style="font-size:11px;margin-top:2px">${LAST[s.key]}</div>`:''}</td>
-        <td data-label="Ativo"><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSupplier('${s.key}',this.checked)" style="width:auto"></td>
-        <td class="row acts" style="justify-content:flex-start">
+    const head = '<div class="sup-row sup-head"><div>Fornecedor</div><div>Tipo</div><div>Token</div><div>Ativo</div><div>Ações</div></div>';
+    box.innerHTML = head + SUPPLIERS.map(s=>{
+      // slots FIXOS: Renovar login e Editar sempre ocupam a posicao (vazia quando nao se aplica)
+      const ren = s.canAutologin
+        ? `<button class="btn small" onclick="reloginSupplier('${s.key}')" title="Logar via navegador e renovar o token">Renovar login</button>`
+        : '<span class="slot"></span>';
+      const edit = s.kind==='generic'
+        ? `<button class="btn small" onclick="editSite('${s.key}')">Editar</button>`
+        : '<span class="slot"></span>';
+      return `<div class="sup-row">
+        <div class="sup-info"><b>${s.name||s.key}</b><div class="url muted">${s.baseUrl||''}</div></div>
+        <div class="sup-tipo"><span class="pill">${s.kind==='generic'?'site':'embutido'}</span></div>
+        <div class="sup-token">
+          ${s.hasToken?'<span class="pill ok">salvo</span>':'<span class="pill no">ausente</span>'}
+          <div class="st-sub">${s.tokenUpdated?('atualizado '+fmtAgo(s.tokenUpdated)):''}</div>
+          <div class="st-res">${LAST[s.key]||''}</div>
+        </div>
+        <div class="sup-ativo"><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSupplier('${s.key}',this.checked)"></div>
+        <div class="sup-acts">
           <button class="btn small primary" onclick="rowToken('${s.key}')">Colar token</button>
-          ${s.canAutologin?`<button class="btn small" onclick="reloginSupplier('${s.key}')" title="Logar via navegador e renovar o token">Renovar login</button>`:''}
-          ${s.kind==='generic'?`<button class="btn small" onclick="editSite('${s.key}')">Editar</button>`:''}
+          ${ren}${edit}
           <button class="btn small" onclick="testSupplier('${s.key}')">Testar</button>
           <button class="btn small danger" onclick="delSupplier('${s.key}')">Remover</button>
-        </td></tr>`).join('') + '</table></div>';
+        </div>
+      </div>`;}).join('');
   }catch(e){ box.innerHTML='<p class="err">'+e.message+'</p>'; }
 }
 async function toggleSupplier(key,enabled){ try{ await api('/api/suppliers',{method:'PUT',body:JSON.stringify({key,enabled})}); }catch(e){} }
