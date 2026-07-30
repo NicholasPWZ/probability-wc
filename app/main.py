@@ -324,11 +324,41 @@ def _autologin_refresh(key: str) -> str | None:
     return None
 
 
+def _keepalive_overrides() -> dict[str, int]:
+    """Parse KEEPALIVE_OVERRIDES ('key:min,key:min') into {key: minutes}."""
+    out: dict[str, int] = {}
+    for part in (get_settings().keepalive_overrides or "").split(","):
+        part = part.strip()
+        if ":" in part:
+            k, m = part.split(":", 1)
+            try:
+                out[k.strip()] = int(m)
+            except ValueError:
+                pass
+    return out
+
+
+def _keepalive_interval(key: str, overrides: dict[str, int]) -> int:
+    """Minutes between pings for a supplier (per-key override or the global default)."""
+    return overrides.get(key, get_settings().keepalive_minutes)
+
+
+_last_ping: dict[str, float] = {}
+
+
 def _keepalive_once() -> None:
+    overrides = _keepalive_overrides()
+    now = time.time()
     for s in store.list_suppliers():
         if not s.get("enabled"):
             continue
         key = s["key"]
+        interval = _keepalive_interval(key, overrides)
+        if interval <= 0:
+            continue
+        if now - _last_ping.get(key, 0.0) < interval * 60:
+            continue   # not due yet
+        _last_ping[key] = now
         try:
             if not s.get("hasToken"):
                 _autologin_refresh(key)   # bootstrap first token when creds exist (no-op otherwise)
@@ -349,13 +379,13 @@ def _keepalive_once() -> None:
 
 
 def _keepalive_loop() -> None:
-    mins = get_settings().keepalive_minutes
-    if mins <= 0:
+    # disabled only if the global default AND every override are off
+    if get_settings().keepalive_minutes <= 0 and not any(v > 0 for v in _keepalive_overrides().values()):
         return
     time.sleep(20 + (os.getpid() % 40))   # stagger workers a bit
     while True:
         _keepalive_once()
-        time.sleep(mins * 60)
+        time.sleep(60)   # tick every minute; each supplier pinged on its own interval
 
 
 @compubot.on_event("startup")
