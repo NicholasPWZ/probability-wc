@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import re
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from curl_cffi import requests
 
@@ -106,11 +106,16 @@ class BraileAdapter(SupplierAdapter):
         return isinstance(j, dict) and "collections" in j
 
     def _product_url(self, it: dict) -> str:
+        # A rota /produto/:params recebe base64(JSON{cdProduto,cdDepartamento,cdCategoria}) — compacto
+        # como o site gera. GOTCHA: o base64 pode conter '/' ou '+' -> PRECISA de URL-encode, senao a
+        # rota do SPA nao casa e cai na home. Departamento cai no prefixo do SKU se faltar na resposta.
+        cd_prod = it.get("cdProduto") or ""
         cat = (it.get("produtoCategoriaList") or [{}])[0]
-        tok = {"cdProduto": it.get("cdProduto"),
-               "cdDepartamento": cat.get("cdDepartamento"), "cdCategoria": cat.get("cdCategoria")}
-        b64 = base64.b64encode(json.dumps(tok).encode("utf-8")).decode("utf-8")
-        return f"{_BASE}/produto/{b64}"
+        cd_dep = cat.get("cdDepartamento") or (cd_prod.split("-")[0] if "-" in cd_prod else "")
+        tok = {"cdProduto": cd_prod, "cdDepartamento": cd_dep, "cdCategoria": cat.get("cdCategoria")}
+        raw = json.dumps(tok, separators=(",", ":"), ensure_ascii=False)
+        b64 = base64.b64encode(raw.encode("utf-8")).decode("utf-8")
+        return f"{_BASE}/produto/{quote(b64, safe='')}"
 
     def search(self, query: str, session) -> list[Product]:
         j = self._call(session, query)
