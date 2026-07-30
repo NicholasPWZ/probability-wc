@@ -47,7 +47,29 @@ RECIPES: dict[str, dict] = {
         "domain": "multimarcasdistribuidora.com.br",
         "success": lambda page: True,
     },
+    "braile": {  # WMW SPA, login num modal (abre por um trigger no header)
+        "loginUrl": "https://www.brailedistribuidora.com.br/",
+        # o click do Playwright nao abre o modal de forma confiavel; um .click() nativo no
+        # gatilho visivel abre. Usa JS.
+        "revealJs": """const e=[...document.querySelectorAll("[ng-click*='openCloseMenuUser']")].find(x=>x.offsetParent!==null); if(e) e.click();""",
+        "user": "#user:visible", "pw": "#ipt-password:visible",
+        "submitJs": """const b=[...document.querySelectorAll("button[ng-click*='vm.login']")].find(x=>x.offsetParent!==null); if(b) b.click();""",
+        "domain": "brailedistribuidora.com.br",
+        "success": lambda page: True,
+    },
 }
+
+
+def _dismiss_cookie(page) -> None:
+    """Best-effort: fecha banner de cookies que pode bloquear cliques."""
+    for txt in ("EU ACEITO", "Aceito", "Aceitar", "Aceitar cookies", "Accept", "Entendi", "OK, entendi"):
+        try:
+            el = page.query_selector(f"text={txt}")
+            if el and el.is_visible():
+                el.click(timeout=3000)
+                return
+        except Exception:
+            pass
 
 _locks: dict[str, threading.Lock] = {}
 
@@ -118,9 +140,35 @@ def _run_login(key, recipe, user, pwd, headless) -> str | None:
     with Camoufox(headless=headless) as browser:
         page = browser.new_page()
         page.goto(recipe["loginUrl"], wait_until="domcontentloaded", timeout=45000)
-        if recipe.get("reveal"):
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)  # deixa o SPA bootar
+        except Exception:
+            pass
+        _dismiss_cookie(page)
+        reveal, reveal_js = recipe.get("reveal"), recipe.get("revealJs")
+        if reveal or reveal_js:
+            # SPA flaky: repete o gatilho ate o campo de usuario ficar visivel. `revealJs` faz
+            # um .click() nativo (mais confiavel que o click do Playwright em alguns SPAs).
+            for _ in range(4):
+                try:
+                    if reveal_js:
+                        page.evaluate("() => { " + reveal_js + " }")
+                    else:
+                        for el in page.query_selector_all(reveal):
+                            try:
+                                el.click(force=True, timeout=4000)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+                try:
+                    page.wait_for_selector(recipe["user"], state="visible", timeout=5000)
+                    break
+                except Exception:
+                    page.wait_for_timeout(1000)
+        else:
             try:
-                page.click(recipe["reveal"], timeout=8000)
+                page.wait_for_selector(recipe["user"], state="visible", timeout=15000)
             except Exception:
                 pass
         page.fill(recipe["user"], user, timeout=20000)
@@ -135,14 +183,17 @@ def _run_login(key, recipe, user, pwd, headless) -> str | None:
             except Exception:
                 pass
         page.fill(recipe["pw"], pwd, timeout=20000)
-        if recipe.get("submit"):
-            page.click(recipe["submit"])
+        if recipe.get("submitJs"):
+            page.evaluate("() => { " + recipe["submitJs"] + " }")   # click nativo (ignora overlays)
+        elif recipe.get("submit"):
+            page.click(recipe["submit"], force=True)   # force: ignora overlays (ex.: popup)
         else:
             page.press(recipe["pw"], "Enter")   # standard form submit
         try:
             page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
             pass
+        page.wait_for_timeout(5000)   # deixa o login assincrono (SPA/XHR) concluir e o cookie virar "logado"
         try:
             ok = bool(recipe["success"](page))
         except Exception:
