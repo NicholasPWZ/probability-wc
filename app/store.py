@@ -161,23 +161,32 @@ def set_token(key: str, token: str) -> dict:
 
 
 def ensure_seed(seed: list[dict]) -> None:
-    """One-time seed of known suppliers (NO tokens) so a fresh install lists them ready
-    for a token. Runs once (guarded by a flag); never overwrites existing rows/tokens,
-    and user deletions stick."""
+    """Seed known suppliers (NO tokens) so a fresh install lists them ready for a token.
+    Idempotent PER KEY: a supplier added to SEED later shows up in already-existing stores
+    too (fixes new suppliers never appearing once the store was seeded). Tracks the set of
+    keys ever seeded (`seededKeys`) so user deletions stick — a deleted supplier is not
+    re-seeded. Never overwrites existing rows/tokens."""
     with _lock:
         data = _load()
-        if data.get("seeded"):
-            return
         rows = data.setdefault("suppliers", [])
         existing = {r["key"] for r in rows}
+        seeded_keys = set(data.get("seededKeys") or [])
+        # migrate old stores (boolean `seeded`, no per-key tracking): assume the keys
+        # currently present were the ones already offered, so we don't re-add deletions.
+        if not seeded_keys and data.get("seeded"):
+            seeded_keys = set(existing)
+        changed = "seededKeys" not in data
         for sd in seed:
-            if sd["key"] in existing:
-                continue
-            rows.append({"key": sd["key"], "kind": sd.get("kind", "builtin"),
-                         "name": sd.get("name"), "baseUrl": sd.get("baseUrl"),
-                         "config": sd.get("config"), "enabled": True, "token": "", "note": ""})
+            if sd["key"] not in existing and sd["key"] not in seeded_keys:
+                rows.append({"key": sd["key"], "kind": sd.get("kind", "builtin"),
+                             "name": sd.get("name"), "baseUrl": sd.get("baseUrl"),
+                             "config": sd.get("config"), "enabled": True, "token": "", "note": ""})
+                changed = True
+            seeded_keys.add(sd["key"])
+        data["seededKeys"] = sorted(seeded_keys)
         data["seeded"] = True
-        _save(data)
+        if changed:
+            _save(data)
 
 
 def delete(key: str) -> None:
