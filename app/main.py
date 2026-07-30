@@ -198,8 +198,12 @@ async def api_supplier_relogin(key: str):
                             detail="Sem auto-login p/ este fornecedor (defina "
                                    f"{key.upper()}_USER/_PASS no .env e a receita de login).")
     tok = await run_in_threadpool(_autologin_refresh, key)
-    return {"ok": bool(tok), "authed": bool(tok),
-            "detail": "Sessão renovada via login." if tok else "Falha no auto-login (veja os logs)."}
+    detail = "Sessão renovada via login."
+    if not tok:
+        reason = autologin.last_error(key)
+        detail = (f"Falha no auto-login: {reason}" if reason
+                  else "Falha no auto-login (veja os logs).")
+    return {"ok": bool(tok), "authed": bool(tok), "detail": detail}
 
 
 # --------------------------------------------------------------------------

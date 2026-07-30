@@ -79,6 +79,12 @@ def _dismiss_cookie(page) -> None:
             pass
 
 _locks: dict[str, threading.Lock] = {}
+# ultimo motivo de falha por fornecedor (p/ a UI mostrar algo util em vez de "veja os logs")
+_last_error: dict[str, str] = {}
+
+
+def last_error(key: str) -> str:
+    return _last_error.get(key, "")
 
 
 def _lock(key: str) -> threading.Lock:
@@ -113,6 +119,7 @@ def login(key: str, watch: bool = False) -> str | None:
     user, pwd = supplier_credentials(key)
     if not (user and pwd):
         print(f"[autologin] {key}: sem credenciais no .env ({key.upper()}_USER/_PASS)")
+        _last_error[key] = "sem credenciais no .env"
         return None
     lock = _lock(key)
     if not lock.acquire(blocking=False):
@@ -122,6 +129,7 @@ def login(key: str, watch: bool = False) -> str | None:
             from camoufox.sync_api import Camoufox  # noqa: F401
         except Exception as exc:
             print(f"[autologin] Camoufox indisponivel: {exc}")
+            _last_error[key] = f"Camoufox indisponivel: {exc}"
             return None
         mode = False if watch else _headless_mode()
         try:
@@ -135,8 +143,10 @@ def login(key: str, watch: bool = False) -> str | None:
                     return _run_login(key, recipe, user, pwd, True)
                 except Exception as exc2:
                     print(f"[autologin] {key} falhou (nativo): {exc2}")
+                    _last_error[key] = f"erro no login: {exc2}"
                     return None
             print(f"[autologin] {key} falhou: {exc}")
+            _last_error[key] = f"erro no login: {exc}"
             return None
     finally:
         lock.release()
@@ -205,9 +215,25 @@ def _run_login(key, recipe, user, pwd, headless) -> str | None:
             ok = bool(recipe["success"](page))
         except Exception:
             ok = True
+        if ok:
+            _last_error.pop(key, None)
+        else:
+            # captura a mensagem de erro do site (ex.: Magento "Incorrect CAPTCHA") p/ a UI
+            msg = ""
+            for sel in ("[data-ui-id*=error]", ".message-error", ".messages"):
+                try:
+                    el = page.query_selector(sel)
+                    if el:
+                        t = (el.inner_text() or "").strip()
+                        if t:
+                            msg = t.splitlines()[0][:140]
+                            break
+                except Exception:
+                    pass
+            _last_error[key] = msg or "login nao confirmado (ainda na pagina de login)"
         cookies = page.context.cookies()
     if not ok:
-        print(f"[autologin] {key}: login nao confirmado (ainda em {recipe['loginUrl']})")
+        print(f"[autologin] {key}: login nao confirmado ({_last_error.get(key, '')})")
     jar = "; ".join(f"{c['name']}={c['value']}" for c in cookies
                     if recipe["domain"] in (c.get("domain") or ""))
     return jar or None
