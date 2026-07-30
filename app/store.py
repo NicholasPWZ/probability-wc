@@ -165,22 +165,31 @@ def ensure_seed(seed: list[dict]) -> None:
     Idempotent PER KEY: a supplier added to SEED later shows up in already-existing stores
     too (fixes new suppliers never appearing once the store was seeded). Tracks the set of
     keys ever seeded (`seededKeys`) so user deletions stick — a deleted supplier is not
-    re-seeded. Never overwrites existing rows/tokens."""
+    re-seeded. Never overwrites existing tokens. Also reconciles a seed row's `kind` when it
+    changes (e.g. a supplier promoted from generic selector-site to a builtin code adapter):
+    updates the existing row's kind and drops the now-stale generic `config`."""
     with _lock:
         data = _load()
         rows = data.setdefault("suppliers", [])
-        existing = {r["key"] for r in rows}
+        by_key = {r["key"]: r for r in rows}
         seeded_keys = set(data.get("seededKeys") or [])
         # migrate old stores (boolean `seeded`, no per-key tracking): assume the keys
         # currently present were the ones already offered, so we don't re-add deletions.
         if not seeded_keys and data.get("seeded"):
-            seeded_keys = set(existing)
+            seeded_keys = set(by_key)
         changed = "seededKeys" not in data
         for sd in seed:
-            if sd["key"] not in existing and sd["key"] not in seeded_keys:
+            row = by_key.get(sd["key"])
+            if row is None and sd["key"] not in seeded_keys:
                 rows.append({"key": sd["key"], "kind": sd.get("kind", "builtin"),
                              "name": sd.get("name"), "baseUrl": sd.get("baseUrl"),
                              "config": sd.get("config"), "enabled": True, "token": "", "note": ""})
+                changed = True
+            elif row is not None and sd.get("kind") and row.get("kind") != sd["kind"]:
+                # kind changed in SEED (e.g. generic -> builtin): reconcile, drop stale config
+                row["kind"] = sd["kind"]
+                if sd["kind"] != "generic":
+                    row.pop("config", None)
                 changed = True
             seeded_keys.add(sd["key"])
         data["seededKeys"] = sorted(seeded_keys)

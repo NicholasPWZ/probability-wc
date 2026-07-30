@@ -47,9 +47,10 @@ RECIPES: dict[str, dict] = {
         "domain": "multimarcasdistribuidora.com.br",
         "success": lambda page: True,
     },
-    "agis": {  # Magento B2B (vendas.agis.com.br); login por e-mail na pagina dedicada
+    "agis": {  # Magento B2B (vendas.agis.com.br); login na pagina dedicada. Campo do usuario e
+        # #login (name=login[username]); #email na pagina e do newsletter. Botao #send2 ("Entre").
         "loginUrl": "https://vendas.agis.com.br/customer/account/login/",
-        "user": "#email", "pw": "#pass", "submit": "#send2",
+        "user": "#login", "pw": "#pass", "submit": "#send2",
         "domain": "vendas.agis.com.br",
         "success": lambda page: "/customer/account/login" not in (page.url or ""),
     },

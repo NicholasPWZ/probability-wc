@@ -1,11 +1,13 @@
 """Supplier adapter registry — import each adapter here to register it."""
 from app.suppliers.base import Product, SupplierAdapter, all_adapters, get_adapter, register
+from app.suppliers.agis import AgisAdapter
 from app.suppliers.braile import BraileAdapter
 from app.suppliers.mock import MockAdapter, MockAdapterB
 from app.suppliers.pauta import PautaAdapter
 
 register(PautaAdapter())
 register(BraileAdapter())
+register(AgisAdapter())
 register(MockAdapter())
 register(MockAdapterB())
 
@@ -41,16 +43,9 @@ SEED = [
                 "authMode": "none", "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
                 "selectors": {"item": ".product", "name": ".product-name", "price": ".current-price",
                               "link": ".product-info", "image": ".image img", "stock": ""}}},
-    # Agis (Magento B2B). Busca catalogsearch server-rendered; PRECO exige login (visitante ve
-    # "faca login") -> authMode cookie + auto-login (receita em autologin.py). Seletor de preco
-    # (.price-box .price) a confirmar no 1o login logado.
-    {"key": "agis", "kind": "generic", "name": "Agis",
-     "baseUrl": "https://vendas.agis.com.br",
-     "config": {"searchUrl": "https://vendas.agis.com.br/catalogsearch/result/?q={q}",
-                "authMode": "cookie", "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
-                "selectors": {"item": ".product-item", "name": ".product-item-link",
-                              "price": ".price-box .price", "link": ".product-item-link",
-                              "image": ".product-image-photo", "stock": ""}}},
+    # Agis (Magento B2B). PRECO carregado por JS (POST /integration/listing/price) -> adapter em
+    # CODIGO (app/suppliers/agis.py), nao generic. Auth por cookie + auto-login (receita em autologin.py).
+    {"key": "agis", "kind": "builtin", "name": "Agis", "baseUrl": "https://vendas.agis.com.br"},
 ]
 
 from app import store as _store
