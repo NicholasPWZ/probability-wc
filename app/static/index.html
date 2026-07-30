@@ -61,15 +61,28 @@
   td input{padding:5px 7px;width:70px} .tot{font-size:16px;font-weight:700;color:var(--accent)}
   .btn.tiny{padding:1px 7px;font-size:12px;line-height:1.4;margin-left:4px}
   .tier-line{white-space:nowrap;padding:1px 0}
-  /* filtro de fornecedores como chips */
-  #supplier-filter{align-items:center}
-  #supplier-filter label{border:1px solid var(--line);border-radius:20px;padding:5px 12px;margin:0;
-    background:var(--panel2);color:var(--muted);cursor:pointer;user-select:none;
-    transition:background .15s,border-color .15s,color .15s}
-  #supplier-filter label:hover{border-color:var(--accent2)}
-  #supplier-filter label:has(input:checked){border-color:var(--accent);color:var(--text);background:rgba(58,166,117,.14)}
-  #supplier-filter label input{display:none}
-  /* responsivo: tabelas .rwd viram cards no celular */
+  /* busca: lista lateral de fornecedores + resultados */
+  .search-layout{display:flex;gap:16px;margin-top:14px;align-items:flex-start}
+  .results-area{flex:1 1 auto;min-width:0}
+  .side{flex:0 0 220px;position:sticky;top:14px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:12px}
+  .side-title{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+    margin-bottom:8px;font-weight:600}
+  .sup-item{display:flex;align-items:center;gap:8px;padding:7px 9px;margin:0 -3px;border-radius:8px;
+    cursor:pointer;user-select:none;color:var(--muted);transition:background .12s,color .12s}
+  .sup-item:hover{background:var(--panel2)}
+  .sup-item:has(input:checked){color:var(--text)}
+  .sup-item input{accent-color:var(--accent);width:16px;height:16px;flex:none;margin:0}
+  .sup-item .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .side-actions{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);
+    font-size:12px}
+  /* responsivo: tabelas .rwd viram cards no celular; lateral vira topo */
+  @media(max-width:760px){
+    .search-layout{flex-direction:column}
+    .side{position:static;flex:1 1 auto;width:100%}
+    .side .sup-list{display:flex;flex-wrap:wrap;gap:6px}
+    .side .sup-item{border:1px solid var(--line);border-radius:20px;padding:5px 12px;margin:0}
+  }
   @media(max-width:640px){
     body{overflow-x:hidden}
     main{padding:12px}
@@ -117,8 +130,10 @@
         <input id="q" placeholder="Buscar produto (ex.: garrafa tinta epson)" onkeydown="if(event.key==='Enter')doSearch()" />
         <button class="btn primary" onclick="doSearch()">Buscar</button>
       </div>
-      <div id="supplier-filter" class="row" style="margin-top:10px;gap:14px;font-size:13px;flex-wrap:wrap"></div>
-      <div id="results" style="margin-top:16px"></div>
+      <div class="search-layout">
+        <aside id="supplier-filter" class="side"></aside>
+        <div id="results" class="results-area"></div>
+      </div>
     </div>
 
     <div id="view-cart" class="hidden">
@@ -381,16 +396,18 @@ function saveSel(){ localStorage.setItem('compubot_sel', JSON.stringify(selected
 function selectedSuppliers(){ return [...document.querySelectorAll('#supplier-filter input[data-sup]:checked')].map(c=>c.dataset.sup); }
 function onSelChange(){ saveSel(); }
 function toggleAllSup(v){ document.querySelectorAll('#supplier-filter input[data-sup]').forEach(c=>c.checked=v); saveSel(); }
+function supReady(s){ return s.enabled && (s.hasToken || (s.config && s.config.authMode==='none')); }
 async function renderSupplierFilter(){
   const box=$('#supplier-filter'); if(!box) return;
   let list=[];
-  try{ list=(await api('/api/suppliers')).suppliers.filter(s=>s.enabled && s.hasToken); }catch(e){ box.innerHTML=''; return; }
-  if(!list.length){ box.innerHTML='<span class="muted">Nenhum fornecedor com token — configure em <a href="#" onclick="showView(\'suppliers\');return false">Fornecedores</a>.</span>'; return; }
+  try{ list=(await api('/api/suppliers')).suppliers.filter(supReady); }catch(e){ box.innerHTML=''; return; }
+  if(!list.length){ box.innerHTML='<div class="side-title">Fornecedores</div><span class="muted" style="font-size:13px">Nenhum pronto — configure em <a href="#" onclick="showView(\'suppliers\');return false">Fornecedores</a>.</span>'; return; }
   const saved=loadSel();
-  box.innerHTML='<span class="muted">Buscar em:</span>'+
-    list.map(s=>{const on=saved?saved.has(s.key):true;
-      return `<label style="display:inline-flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" data-sup="${s.key}" ${on?'checked':''} onchange="onSelChange()" style="width:auto"> ${s.name||s.key}</label>`;}).join('')+
-    ` <a href="#" class="muted" onclick="toggleAllSup(true);return false">todos</a> · <a href="#" class="muted" onclick="toggleAllSup(false);return false">nenhum</a>`;
+  const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  box.innerHTML='<div class="side-title">Buscar em</div>'+
+    '<div class="sup-list">'+list.map(s=>{const on=saved?saved.has(s.key):true;
+      return `<label class="sup-item"><input type="checkbox" data-sup="${esc(s.key)}" ${on?'checked':''} onchange="onSelChange()"><span class="nm">${esc(s.name||s.key)}</span></label>`;}).join('')+'</div>'+
+    `<div class="side-actions"><a href="#" class="muted" onclick="toggleAllSup(true);return false">todos</a> · <a href="#" class="muted" onclick="toggleAllSup(false);return false">nenhum</a></div>`;
 }
 
 let LAST_SEARCH = null, CURRENT_SORT = 'price_asc';

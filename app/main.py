@@ -228,12 +228,22 @@ def _is_relevant(tokens: list[str], p: dict) -> bool:
     return all(t in hay for t in tokens)
 
 
+def _row_no_auth(row: dict | None) -> bool:
+    """A generic site configured authMode=none needs no token (prices are public)."""
+    return bool(row) and (str((row.get("config") or {}).get("authMode", "")).lower() == "none")
+
+
+def _supplier_ready(row: dict) -> bool:
+    """Searchable = enabled AND (has a token OR needs no auth)."""
+    return bool(row.get("enabled")) and (bool(row.get("hasToken")) or _row_no_auth(row))
+
+
 def _search_one(key: str, query: str) -> dict:
     adapter = _resolve_adapter(key)
     if adapter is None:
         return {"key": key, "ok": False, "error": "adapter ausente", "products": []}
     token = store.get_token(key)
-    if not token:
+    if not token and not _row_no_auth(store.get_row(key)):
         return {"key": key, "name": adapter.name, "ok": False,
                 "error": "sem token — configure em Fornecedores", "products": []}
     now = time.time()
@@ -266,7 +276,7 @@ async def api_search(q: str, suppliers: str = ""):
     q = (q or "").strip()
     if len(q) < 2:
         raise HTTPException(status_code=400, detail="Digite ao menos 2 caracteres.")
-    active = [s["key"] for s in store.list_suppliers() if s["enabled"] and s["hasToken"]]
+    active = [s["key"] for s in store.list_suppliers() if _supplier_ready(s)]
     if suppliers:  # restrict to the chosen suppliers (checkboxes)
         chosen = {k.strip() for k in suppliers.split(",") if k.strip()}
         active = [k for k in active if k in chosen]
