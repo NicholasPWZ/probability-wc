@@ -27,13 +27,15 @@ RECIPES: dict[str, dict] = {
     },
     "pauta": {
         "loginUrl": "https://pauta.com.br/login",
-        "user": "#Email", "pw": "#Password",     # nopCommerce; submit via Enter
+        # nopCommerce login por CNPJ; a pagina tem 3 forms iguais -> mira o VISIVEL. Submit via Enter.
+        "user": "#Email:visible", "pw": "#Password:visible",
         "domain": "pauta.com.br",
         "success": lambda page: "/login" not in (page.url or ""),
     },
     "mazer": {
-        "loginUrl": "https://www.mazer.com.br/",  # form fica visivel na home (contentLoginHome)
-        "user": "#username", "pw": "#password", "submit": "#enter",
+        "loginUrl": "https://www.mazer.com.br/",  # form visivel na home (contentLoginHome)
+        # #enter fica fora da viewport (nao clica) -> submete via Enter
+        "user": "#username:visible", "pw": "#password:visible",
         "domain": "mazer.com.br",
         "success": lambda page: True,
     },
