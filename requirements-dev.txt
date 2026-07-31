@@ -1,0 +1,4 @@
+# Dependencias so de desenvolvimento/teste (nao necessarias em producao).
+# Instale: ./.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+# Rode:    ./.venv/Scripts/python.exe -m pytest -q
+pytest>=8.0
