@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     search_ttl: int = 120           # seconds to cache a (supplier, query) search result
     session_max_age: int = 30 * 24 * 3600  # app login cookie lifetime
     keepalive_minutes: int = 12     # background ping to keep supplier sessions alive (0 disables)
+    # janela silenciosa (horario de Brasilia): sem keepalive das 20h ate 6h (ninguem usando).
+    # start == end desativa a janela (keepalive 24h).
+    keepalive_quiet_start: int = 20
+    keepalive_quiet_end: int = 6
     # per-supplier overrides for faster-expiring sessions: "key:minutes,key:minutes".
     # braile (WMW/Java session) expires by ~5min inactivity -> ping every 4min to keep it
     # alive via sliding renewal (avoids a full Camoufox re-login each time).

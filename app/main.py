@@ -407,13 +407,35 @@ def _keepalive_once() -> None:
             pass
 
 
+def _brazil_hour() -> int:
+    """Hora atual no fuso de Brasilia (America/Sao_Paulo). Usa zoneinfo se houver a base de
+    fusos (Linux tem); senao cai no offset fixo UTC-3 (Brasil nao tem horario de verao desde 2019)."""
+    from datetime import datetime, timezone
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/Sao_Paulo")).hour
+    except Exception:
+        return (datetime.now(timezone.utc).hour - 3) % 24
+
+
+def _keepalive_quiet_now() -> bool:
+    """True se estamos na janela silenciosa (ex.: 20h-6h) — sem testar tokens (ninguem usando)."""
+    s = get_settings()
+    start, end = s.keepalive_quiet_start, s.keepalive_quiet_end
+    if start == end:
+        return False   # janela vazia = keepalive sempre ativo
+    h = _brazil_hour()
+    return start <= h < end if start < end else (h >= start or h < end)
+
+
 def _keepalive_loop() -> None:
     # disabled only if the global default AND every override are off
     if get_settings().keepalive_minutes <= 0 and not any(v > 0 for v in _keepalive_overrides().values()):
         return
     time.sleep(20 + (os.getpid() % 40))   # stagger workers a bit
     while True:
-        _keepalive_once()
+        if not _keepalive_quiet_now():   # pula o keepalive na janela noturna (economia)
+            _keepalive_once()
         time.sleep(60)   # tick every minute; each supplier pinged on its own interval
 
 
