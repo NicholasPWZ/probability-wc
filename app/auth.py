@@ -40,6 +40,41 @@ def check_password(pw: str) -> bool:
     return bool(real) and hmac.compare_digest(pw or "", real)
 
 
+# --- brute-force protection (in-memory, per IP) ---------------------------
+# Nota: em memoria e por processo — com varios workers do gunicorn o limite efetivo
+# e MAX * n_workers. Suficiente para um app pequeno atras do nginx.
+_LOGIN_FAILS: dict[str, list[float]] = {}
+_MAX_FAILS = 6        # tentativas erradas permitidas dentro da janela
+_WINDOW = 300         # segundos (5 min): janela deslizante e duracao do bloqueio
+
+
+def client_ip(request: Request) -> str:
+    """IP do cliente — atras do nginx usa o 1o hop do X-Forwarded-For."""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+
+def login_blocked(ip: str) -> int:
+    """Segundos restantes de bloqueio (0 = liberado). Conta falhas na janela deslizante."""
+    now = time.time()
+    fails = [t for t in _LOGIN_FAILS.get(ip, []) if now - t < _WINDOW]
+    _LOGIN_FAILS[ip] = fails
+    if len(fails) >= _MAX_FAILS:
+        oldest_relevant = sorted(fails)[len(fails) - _MAX_FAILS]
+        return max(1, int(_WINDOW - (now - oldest_relevant)))
+    return 0
+
+
+def record_login_fail(ip: str) -> None:
+    _LOGIN_FAILS.setdefault(ip, []).append(time.time())
+
+
+def clear_login_fails(ip: str) -> None:
+    _LOGIN_FAILS.pop(ip, None)
+
+
 def require_auth(request: Request) -> None:
     """FastAPI dependency: 401 unless a valid session cookie is present."""
     if not valid_session(request.cookies.get(COOKIE_NAME)):

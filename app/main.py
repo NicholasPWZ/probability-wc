@@ -59,8 +59,15 @@ async def api_config(request: Request):
 async def api_login(req: LoginRequest, request: Request, response: Response):
     if not get_settings().app_password:
         raise HTTPException(status_code=503, detail="App sem senha definida (APP_PASSWORD no .env).")
+    ip = auth.client_ip(request)
+    wait = auth.login_blocked(ip)
+    if wait:
+        raise HTTPException(status_code=429,
+                            detail=f"Muitas tentativas. Tente novamente em ~{wait // 60 + 1} min.")
     if not auth.check_password(req.password):
+        auth.record_login_fail(ip)
         raise HTTPException(status_code=401, detail="Senha incorreta.")
+    auth.clear_login_fails(ip)
     response.set_cookie(
         auth.COOKIE_NAME, auth.make_session(),
         max_age=get_settings().session_max_age, httponly=True, samesite="lax",
