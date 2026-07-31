@@ -329,27 +329,34 @@ def _search_one_safe(key: str, query: str) -> dict:
 # keep-alive: periodically ping each supplier so sessions don't expire by inactivity,
 # and re-capture any refreshed cookie (sliding sessions). Extends token life a lot.
 # --------------------------------------------------------------------------
-def _autologin_refresh(key: str) -> str | None:
+def _autologin_refresh(key: str, attempts: int = 2) -> str | None:
     """Re-mint a supplier session via Camoufox (uses .env credentials). Persists the token
-    ONLY if it actually authenticates (so a failed login's guest cookie isn't saved)."""
+    ONLY if it actually authenticates (so a failed login's guest cookie isn't saved). Retries
+    on transient failures (flaky SPA login); does NOT retry a CAPTCHA (won't help and can worsen
+    a lockout)."""
     from app import autologin
     if not (get_settings().autologin_enabled and autologin.can_autologin(key)):
         return None
-    tok = autologin.login(key)
-    if not tok:
-        return None
-    adapter = _resolve_adapter(key)
-    try:
-        session = adapter.build_session(tok)
-        # check_auth is weak for generic sites (just a 200) — also require a search that
-        # actually returns prices, so a guest cookie from a failed login isn't saved.
-        if adapter and adapter.check_auth(session) and \
-                any(p.price is not None for p in adapter.search("mouse", session)):
-            store.set_token(key, tok)
-            return tok
-    except Exception:
-        pass
-    print(f"[autologin] {key}: cookie obtido mas nao autenticou (login provavelmente falhou)")
+    for i in range(max(1, attempts)):
+        tok = autologin.login(key)
+        if tok:
+            adapter = _resolve_adapter(key)
+            try:
+                session = adapter.build_session(tok)
+                # check_auth is weak for generic sites (just a 200) — also require a search that
+                # actually returns prices, so a guest cookie from a failed login isn't saved.
+                if adapter and adapter.check_auth(session) and \
+                        any(p.price is not None for p in adapter.search("mouse", session)):
+                    store.set_token(key, tok)
+                    return tok
+            except Exception:
+                pass
+        if "captcha" in (autologin.last_error(key) or "").lower():
+            break   # captcha nao passa com retry
+        if i < attempts - 1:
+            print(f"[autologin] {key}: tentativa {i + 1} falhou, tentando de novo…")
+            time.sleep(4)
+    print(f"[autologin] {key}: nao autenticou apos {attempts} tentativa(s)")
     return None
 
 
