@@ -31,6 +31,7 @@ class Product:
     brand: str | None = None
     sku: str | None = None
     part_number: str | None = None
+    ean: str | None = None          # barcode/GTIN — strongest cross-supplier match key when present
     product_id: str | None = None
     in_stock: bool | None = None
     stock: int | None = None

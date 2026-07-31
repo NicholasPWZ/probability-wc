@@ -133,6 +133,9 @@ class BraileAdapter(SupplierAdapter):
                 price_text=_brl(price),
                 brand=_as_text(it.get("marca")) or _as_text(it.get("cdMarca")) or None,
                 sku=it.get("cdProduto"),
+                ean=(_as_text(it.get("cdBarra")) or _as_text(it.get("nrCodBarra"))
+                     or _as_text(it.get("dsCodigoBarra")) or _as_text(it.get("ean"))
+                     or _as_text(it.get("gtin")) or _as_text(it.get("codigoBarras")) or None),
                 in_stock=(stock or 0) > 0 if stock is not None else None,
                 stock=int(stock) if stock else None,
                 tiers=[Tier(price=price)] if price else [],

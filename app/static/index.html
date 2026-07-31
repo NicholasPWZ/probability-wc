@@ -618,19 +618,40 @@ function toggleGroup(){ GROUPED=!GROUPED; localStorage.setItem('compubot_group',
 const _SPEC=new Set(['DPI','GHZ','MHZ','USB','RGB','LED','ABNT','PTBR','HDMI','SSD','GB','TB','MM','CM','HZ','FPS','NM','WH','MAH','V','W']);
 function _normCode(t){ return String(t).toUpperCase().replace(/[^A-Z0-9]/g,''); }
 function codeTokens(p){
-  // codigos distintivos p/ casar o mesmo produto: part-number + codigos tipo 920-013518, 48.7477, M711, MK250.
+  // codigos distintivos p/ casar o mesmo produto: EAN (mais forte) + part-number + codigos no nome.
   const set=new Set();
+  if(p.ean){ const e=_normCode(p.ean); if(e.length>=8) set.add('EAN'+e); }
   if(p.part_number) { const k=_normCode(p.part_number); if(k.length>=4) set.add(k); }
   const toks=(p.name||'').match(/[A-Za-z0-9]+(?:[.\-\/][A-Za-z0-9]+)+|[A-Za-z]{1,4}\d{2,}[A-Za-z0-9]*/g)||[];
   for(const t of toks){ const k=_normCode(t); if(k.length>=4 && /\d/.test(k) && !_SPEC.has(k)) set.add(k); }
   return [...set];
 }
 function bestRegion(p){ const t=(p.tiers||[]).filter(x=>x.price!=null).sort((a,b)=>a.price-b.price)[0]; return (t&&t.region)||null; }
+function bestTierIndex(p){ const t=p.tiers||[]; let bi=-1,bp=Infinity; t.forEach((x,i)=>{ if(x.price!=null&&x.price<bp){bp=x.price;bi=i;} }); return bi>=0?bi:null; }
+const _STOP=new Set(['de','com','sem','para','por','e','a','o','os','as','da','do','na','no','em','the','un']);
+function nameSig(p){
+  // NFD decompoe acentos; [^a-z0-9] ja remove as marcas combinantes e a pontuacao.
+  const n=(p.name||'').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,' ');
+  return new Set(n.split(' ').filter(t=>t.length>=3 && !_STOP.has(t)));
+}
+function _jac(a,b){ let i=0; for(const x of a) if(b.has(x)) i++; const u=a.size+b.size-i; return u?i/u:0; }
 function groupItems(items){
   const parent=items.map((_,i)=>i);
   const find=x=>{ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; };
   const codeMap=new Map();
   items.forEach((p,i)=>{ for(const c of codeTokens(p)){ if(codeMap.has(c)) parent[find(i)]=find(codeMap.get(c)); else codeMap.set(c,i); } });
+  // 2a passada: nomes MUITO parecidos (produtos sem codigo em comum). Conservador: marcas iguais,
+  // Jaccard alto E >=4 palavras significativas em comum -> evita juntar produtos diferentes da mesma marca.
+  const sigs=items.map(nameSig);
+  for(let i=0;i<items.length;i++){
+    for(let j=i+1;j<items.length;j++){
+      if(find(i)===find(j)) continue;
+      const bi=(items[i].brand||'').toLowerCase(), bj=(items[j].brand||'').toLowerCase();
+      if(bi&&bj&&bi!==bj) continue;
+      let inter=0; for(const x of sigs[i]) if(sigs[j].has(x)) inter++;
+      if(inter>=4 && _jac(sigs[i],sigs[j])>=0.82) parent[find(i)]=find(j);
+    }
+  }
   const g=new Map();
   items.forEach((p,i)=>{ const r=find(i); if(!g.has(r)) g.set(r,[]); g.get(r).push(p); });
   return [...g.values()].map(offers=>{
@@ -647,11 +668,12 @@ function renderGroupedHTML(groups){
     const meta=[metaLine(g.rep), nsup>1?`<span class="pill ok">${nsup} fornecedores</span>`:null].filter(Boolean).join(' · ');
     const offers=g.offers.map(o=>{
       const region=hasRegions(o)?bestRegion(o):null;
+      const bti=hasRegions(o)?bestTierIndex(o):null;   // pauta: "+" adiciona o estado mais barato
       return `<div class="goffer${o.price===g.price&&o.price!=null?' best':''}">
         <span class="gsup">${o.supplier}</span>
         <span class="gprice">${o.price!=null?brl(o.price):'—'}${region?` <span class="muted" style="font-weight:400">${region}</span>`:''}</span>
         ${o.in_stock===false?'<span class="gstk warn">sem estoque</span>':(o.stock!=null?`<span class="gstk muted">est. ${o.stock}</span>`:'')}
-        <span class="gbtns">${hasRegions(o)?'':`<button class="btn small primary" onclick="addToCart(${o._idx})" title="Adicionar ao carrinho">+ carrinho</button>`}<a href="${o.url}" target="_blank" rel="noopener" class="btn small">abrir</a></span>
+        <span class="gbtns">${o.price!=null?`<button class="btn small primary" onclick="addToCart(${o._idx}${bti!=null?','+bti:''})" title="Adicionar ao carrinho">+ carrinho</button>`:''}<a href="${o.url}" target="_blank" rel="noopener" class="btn small">abrir</a></span>
       </div>`;
     }).join('');
     return `<div class="gcard">
