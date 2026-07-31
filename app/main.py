@@ -10,7 +10,8 @@ import os
 import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as _FuturesTimeout
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -288,11 +289,25 @@ async def api_search(q: str, suppliers: str = ""):
         return {"query": q, "suppliers": [], "note": "Nenhum fornecedor selecionado/configurado com token."}
 
     def _run():
+        # Fan-out com DEADLINE: retorna assim que todos terminam OU quando estoura o prazo — um
+        # fornecedor lento (ex.: pauta trava ~25s numa busca logada sem resultado) nao segura mais
+        # o resultado dos outros. Os que nao responderam a tempo entram como falha (thread continua
+        # em background e morre no request_timeout).
+        deadline = max(1, get_settings().search_deadline)
+        pool = ThreadPoolExecutor(max_workers=min(8, len(active)))
+        futs = {pool.submit(_search_one_safe, k, q): k for k in active}
         results = []
-        with ThreadPoolExecutor(max_workers=min(8, len(active))) as pool:
-            futs = {pool.submit(_search_one_safe, k, q): k for k in active}
-            for f in futs:
+        try:
+            for f in as_completed(futs, timeout=deadline):
                 results.append(f.result())
+        except _FuturesTimeout:
+            pass
+        for f, k in futs.items():
+            if not f.done():
+                ad = _resolve_adapter(k)
+                results.append({"key": k, "name": getattr(ad, "name", k), "ok": False,
+                                "error": f"sem resposta em {deadline}s (timeout)", "products": []})
+        pool.shutdown(wait=False)
         results.sort(key=lambda r: r.get("name") or r["key"])
         return results
 

@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     # Absolute so gunicorn and any CLI/one-off always use the same store.
     cache_dir: str = str(_ROOT / ".cache")
     request_timeout: int = 25       # per-request seconds for supplier scraping
+    search_deadline: int = 12       # max seconds the COMBINED search waits before returning partial
+                                    # results (a slow/hung supplier is marked timeout, not blocking)
     search_ttl: int = 120           # seconds to cache a (supplier, query) search result
     session_max_age: int = 30 * 24 * 3600  # app login cookie lifetime
     keepalive_minutes: int = 12     # background ping to keep supplier sessions alive (0 disables)
