@@ -13,14 +13,15 @@
     --text:#e7ecf2; --muted:#93a1b0; --faint:#6c7885;
     --accent:#3aa675; --accent-h:#43b884; --accent2:#4da3ff;
     --bad:#e5555b; --warn:#e0a63a;
-    --r:12px; --r-sm:8px; --r-pill:999px;
-    --shadow:0 1px 2px rgba(0,0,0,.28),0 6px 20px rgba(0,0,0,.16);
+    --r:14px; --r-sm:10px; --r-pill:999px;
+    --shadow:0 1px 2px rgba(0,0,0,.16),0 6px 22px rgba(0,0,0,.10);
     --font:system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --appbar-h:57px;
   }
   *{box-sizing:border-box}
   html,body{margin:0}
-  body{background:var(--bg);color:var(--text);font:15px/1.5 var(--font);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  body{background:var(--bg);color:var(--text);font:15px/1.5 var(--font);-webkit-font-smoothing:antialiased;
+    overflow-x:hidden;background-image:radial-gradient(1100px 520px at 50% -240px,rgba(58,166,117,.06),transparent)}
   a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
   h1,h2,h3{margin:0;font-weight:650;line-height:1.25}
   img{max-width:100%}
@@ -67,6 +68,13 @@
   .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);
     border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
   @keyframes s{to{transform:rotate(360deg)}}
+  /* toast (aviso flutuante, ex.: orcamento copiado) */
+  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,16px);z-index:100;
+    background:var(--accent);color:#fff;font-weight:600;font-size:14px;padding:11px 18px;border-radius:var(--r-sm);
+    box-shadow:0 8px 28px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;
+    display:flex;align-items:center;gap:8px;max-width:90vw}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast.err{background:var(--bad)}
 
   /* ===== forms ===== */
   input,textarea,select{background:var(--panel2);border:1px solid var(--line);color:var(--text);
@@ -636,16 +644,26 @@ function renderCart(){
       <div><div class="muted">Lucro</div><div style="font-size:16px;font-weight:600;color:var(--accent2)">${brl(profit)}</div></div>
     </div></div>`;
 }
+let _toastTimer=null;
+function showToast(msg, kind){
+  let t=document.getElementById('toast');
+  if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); }
+  t.textContent=msg;
+  t.className='toast show'+(kind==='err'?' err':'');
+  clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(()=>{ t.className='toast'+(kind==='err'?' err':''); }, 1900);
+}
 function copyQuote(){
-  if(!CART.length){ return; }
+  if(!CART.length){ showToast('Carrinho vazio','err'); return; }
   const lines=['*Orçamento*',''];
   let tot=0;
   for(const it of CART){ const cu=clientUnit(it), qty=it.qty||1; if(cu==null) continue; const sub=cu*qty; tot+=sub;
     lines.push(`• ${it.name} — ${qty}x ${brl(cu)} = ${brl(sub)}`); }
   lines.push('', `*Total: ${brl(tot)}*`);
   const text=lines.join('\n');
-  navigator.clipboard.writeText(text).then(()=>{ const b=event&&event.target; if(b){const t=b.textContent;b.textContent='✓ copiado';setTimeout(()=>b.textContent=t,1200);} },
-    ()=>alert('Copie manualmente:\n\n'+text));
+  navigator.clipboard.writeText(text).then(
+    ()=>showToast('Orçamento copiado ✓'),
+    ()=>{ showToast('Não consegui copiar automaticamente','err'); alert('Copie manualmente:\n\n'+text); });
 }
 
 boot();
