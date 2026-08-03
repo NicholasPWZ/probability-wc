@@ -638,6 +638,10 @@ function codeTokens(p){
   if(p.part_number) { const k=_normCode(p.part_number); if(k.length>=4) set.add(k); }
   const toks=(p.name||'').match(/[A-Za-z0-9]+(?:[.\-\/][A-Za-z0-9]+)+|[A-Za-z]{1,4}\d{2,}[A-Za-z0-9]*/g)||[];
   for(const t of toks){ const k=_normCode(t); if(k.length>=4 && /\d/.test(k) && !_SPEC.has(k)) set.add(k); }
+  // GPU: familia (rtx/gtx/rx/arc/gt) + numero, mesmo separados por espaco: "RTX 4060 Ti" -> "RTX4060TI".
+  // Junta o modelo espacado (que nao vira token contiguo) sem colidir (o prefixo torna o numero unico).
+  const gpu=(p.name||'').match(/\b(rtx|gtx|rx|arc|gt)\s*-?\s*\d{3,4}\s*(ti|xt|xtx|super)?\b/gi)||[];
+  for(const g of gpu) set.add(_normCode(g));
   return [...set];
 }
 function bestRegion(p){ const t=(p.tiers||[]).filter(x=>x.price!=null).sort((a,b)=>a.price-b.price)[0]; return (t&&t.region)||null; }
@@ -651,10 +655,17 @@ function nameSig(p){
 // codigo de modelo = token alfanumerico (letra+digito) tipo M90, EC3, M190AZ, G203 — identificador
 // forte. NAO conta numero puro (ex.: "910" do part-number, comum a toda a marca -> encadeava grupos),
 // nem spec (8000dpi, 30cm), nem palavra (ergonomico). Isso e o que casa produtos por nome.
-const _SPEC_RE=/^\d+(dpi|dpis|ghz|mhz|hz|mah|wh|gb|tb|cm|mm|kg|w|v|pol|k|fps|nm|rpm|bit|bits|ppp|hz)$/;
-// >=2 DIGITOS: exclui soquetes/specs de 1 digito (am4/am5/am3/ddr5/usb3/fm2) que sao compartilhados
-// por muitos produtos e encadeavam grupos; modelos reais (M90/M170/9600X/G203) tem 2+ digitos.
-function _isModelCode(t){ return t.length>=3 && /[a-z]/.test(t) && (t.match(/\d/g)||[]).length>=2 && !_SPEC_RE.test(t); }
+// specs (numero+unidade: 3.5GHz->35GHZ, 6-Core->6CORE, 16GB, 1440p->1440P) e PLATAFORMAS
+// (soquete/chipset/memoria: AM4/AM5/LGA1700/B550/Z790/DDR4/DDR5) NAO sao modelo — sao compartilhados
+// por muitos produtos e encadeiam grupos. Aplicado a TODOS os codigos (maiusculos) via _cleanCode.
+const _SPEC_CODE=/^\d+(GHZ|MHZ|HZ|GB|TB|MB|KB|W|V|MAH|WH|CM|MM|KG|DPI|NM|CORE|CORES|NUCLEOS|NUCLEO|BIT|BITS|P|FPS|RPM|POL|PPP|PLUS|PCS|UN|ANOS|LED)$/;
+const _PLATFORM=new Set(['AM4','AM5','AM3','FM2','SP3','STR4','TR4','LGA1700','LGA1200','LGA1151','LGA1155','LGA2066',
+ 'B350','B450','B550','B650','B660','B760','B840','B850','X470','X570','X670','X870','Z590','Z690','Z790','Z890',
+ 'H410','H510','H610','H710','H810','A320','A520','A620','DDR2','DDR3','DDR4','DDR5','PCIE','SATA','NVME','USB2','USB3',
+ 'WIFI5','WIFI6','CL14','CL16','CL18','CL22','CL30','CL32','CL36','CL40','GEN3','GEN4','GEN5']);
+// modelo = alfanumerico com >=2 digitos (M90/M170/9600X/G203); soquete/spec de 1 digito ja cai fora
+function _isModelCode(t){ return t.length>=3 && /[a-z]/.test(t) && (t.match(/\d/g)||[]).length>=2; }
+function _cleanCode(c){ return c.length>=3 && !_SPEC_CODE.test(c) && !_PLATFORM.has(c); }
 const _BRANDS=new Set(['logitech','redragon','multilaser','dell','hp','lenovo','acer','asus','samsung','lg',
  'intelbras','tplink','mercusys','kingston','sandisk','seagate','wd','kmex','c3tech','oex','genius','microsoft',
  'razer','hyperx','corsair','thunderx3','husky','motospeed','xtrike','fortrek','maxprint','elgin','philips','jbl',
@@ -662,7 +673,8 @@ const _BRANDS=new Set(['logitech','redragon','multilaser','dell','hp','lenovo','
  'geonav','trust','xcell','duex','bright','a4tech','marvo','evolut','vinik','feir','hayom']);
 function brandOf(p){
   if(p.brand && typeof p.brand==='string' && p.brand.trim()) return p.brand.trim().toLowerCase().replace(/[^a-z0-9]/g,'');
-  for(const t of nameSig(p)) if(_BRANDS.has(t)) return t;   // detecta a marca no nome (fornecedor sem campo)
+  for(const t of (p.name||'').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,' ').split(' '))
+    if(_BRANDS.has(t)) return t;   // tokeniza cru (>=2 chars) p/ pegar marcas curtas (lg/hp/wd) que nameSig descarta
   return '';
 }
 // cores — variantes de cor sao produtos DIFERENTES (mesmo modelo, cor diferente = SKU diferente)
@@ -684,9 +696,10 @@ function groupItems(items){
   const sigs=items.map(nameSig);
   // codigos por item: part-number/nome (do codeTokens, sem o EAN) + codigos de modelo do nome (M90, EC3…)
   const codes=items.map((p,i)=>{
-    const s=new Set(codeTokens(p).filter(c=>!c.startsWith('EAN')));
+    const s=new Set();
+    for(const c of codeTokens(p)) if(!c.startsWith('EAN')) s.add(c);
     for(const t of sigs[i]) if(t!==brands[i] && _isModelCode(t)) s.add(_normCode(t));
-    return s;
+    return new Set([...s].filter(_cleanCode));   // remove specs (35GHZ/6CORE/1440P) e plataformas (LGA1700/B550)
   });
   const share=(a,b)=>{ for(const c of a) if(b.has(c)) return true; return false; };
   for(let i=0;i<items.length;i++){
