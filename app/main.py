@@ -332,6 +332,22 @@ def _search_one_safe(key: str, query: str) -> dict:
                 "error": str(exc), "products": []}
 
 
+@compubot.get("/api/search/one", dependencies=[Depends(auth.require_auth)])
+async def api_search_one(q: str, supplier: str):
+    """Busca UM fornecedor — a UI chama um destes por fornecedor em paralelo e mostra cada
+    resultado assim que chega (carregamento incremental; um lento nao segura os outros)."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        raise HTTPException(status_code=400, detail="Digite ao menos 2 caracteres.")
+    key = (supplier or "").strip()
+    row = store.get_row(key)
+    if not row or not _supplier_ready(row):
+        name = (row or {}).get("name") or key
+        return {"key": key, "name": name, "ok": False,
+                "error": "nao configurado/sem token", "products": []}
+    return await run_in_threadpool(_search_one_safe, key, q)
+
+
 # --------------------------------------------------------------------------
 # keep-alive: periodically ping each supplier so sessions don't expire by inactivity,
 # and re-capture any refreshed cookie (sliding sessions). Extends token life a lot.
