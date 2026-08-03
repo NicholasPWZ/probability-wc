@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # start == end desativa a janela (keepalive 24h).
     keepalive_quiet_start: int = 20
     keepalive_quiet_end: int = 6
+    # fornecedores que, mesmo na janela noturna, recebem um ping BARATO (check_auth) p/ manter a
+    # sessao viva — os que nao conseguem re-logar sozinhos (ex.: agis, captcha). Camoufox NUNCA roda
+    # de madrugada. Lista "chave,chave". Vazio = ninguem (janela noturna totalmente parada).
+    keepalive_quiet_keep_alive: str = "agis"
     # per-supplier overrides for faster-expiring sessions: "key:minutes,key:minutes".
     # braile (WMW/Java session) expires by ~5min inactivity -> ping every 4min to keep it
     # alive via sliding renewal (avoids a full Camoufox re-login each time).

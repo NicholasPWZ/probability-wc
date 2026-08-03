@@ -389,13 +389,25 @@ def _keepalive_interval(key: str, overrides: dict[str, int]) -> int:
 _last_ping: dict[str, float] = {}
 
 
-def _keepalive_once() -> None:
+def _keepalive_quiet_keep() -> set[str]:
+    """Fornecedores que continuam recebendo o ping BARATO na janela noturna (mantem a sessao
+    viva) porque nao conseguem re-logar sozinhos — ex.: agis (captcha). Config KEEPALIVE_QUIET_KEEP."""
+    raw = get_settings().keepalive_quiet_keep_alive or ""
+    return {k.strip() for k in raw.split(",") if k.strip()}
+
+
+def _keepalive_once(cheap_only: bool = False) -> None:
+    """cheap_only (janela noturna): so mantem a sessao viva (check_auth + regrava cookie) dos
+    fornecedores em KEEPALIVE_QUIET_KEEP; NUNCA roda o Camoufox (bootstrap/re-login) — economia."""
     overrides = _keepalive_overrides()
+    keep = _keepalive_quiet_keep() if cheap_only else None
     now = time.time()
     for s in store.list_suppliers():
         if not s.get("enabled"):
             continue
         key = s["key"]
+        if cheap_only and key not in keep:
+            continue   # de madrugada, so os que nao se auto-recuperam (ex.: agis)
         interval = _keepalive_interval(key, overrides)
         if interval <= 0:
             continue
@@ -404,7 +416,8 @@ def _keepalive_once() -> None:
         _last_ping[key] = now
         try:
             if not s.get("hasToken"):
-                _autologin_refresh(key)   # bootstrap first token when creds exist (no-op otherwise)
+                if not cheap_only:
+                    _autologin_refresh(key)   # bootstrap first token when creds exist (no-op otherwise)
                 continue
             adapter = _resolve_adapter(key)
             token = store.get_token(key)
@@ -415,8 +428,8 @@ def _keepalive_once() -> None:
                 refreshed = adapter.dump_token(session)   # capture any renewed cookie
                 if refreshed and refreshed != token:
                     store.set_token(key, refreshed)
-            else:
-                _autologin_refresh(key)                   # expired -> re-login via Camoufox
+            elif not cheap_only:
+                _autologin_refresh(key)                   # expired -> re-login via Camoufox (nao de madrugada)
         except Exception:
             pass
 
@@ -448,8 +461,9 @@ def _keepalive_loop() -> None:
         return
     time.sleep(20 + (os.getpid() % 40))   # stagger workers a bit
     while True:
-        if not _keepalive_quiet_now():   # pula o keepalive na janela noturna (economia)
-            _keepalive_once()
+        # na janela noturna roda so o ping BARATO (cheap_only) dos que nao se auto-recuperam;
+        # o resto (e o Camoufox) fica pausado — economia. Fora dela, keepalive normal.
+        _keepalive_once(cheap_only=_keepalive_quiet_now())
         time.sleep(60)   # tick every minute; each supplier pinged on its own interval
 
 
