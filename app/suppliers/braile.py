@@ -119,7 +119,8 @@ class BraileAdapter(SupplierAdapter):
 
     def search(self, query: str, session) -> list[Product]:
         j = self._call(session, query)
-        prods = ((j or {}).get("collections") or [[]])[0]
+        # sem resultado a API pode devolver collections=[null] -> o [0] vira None; garante lista
+        prods = ((j or {}).get("collections") or [[]])[0] or []
         out = []
         for it in prods:
             tp = it.get("itemTabelaPreco") or {}

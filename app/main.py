@@ -252,6 +252,20 @@ def _supplier_ready(row: dict) -> bool:
     return bool(row.get("enabled")) and (has_token or _row_no_auth(row))
 
 
+def _request_timeouts() -> dict[str, int]:
+    """Override de timeout por loja: REQUEST_TIMEOUT_OVERRIDES='chave:seg,chave:seg'."""
+    out: dict[str, int] = {}
+    for part in (get_settings().request_timeout_overrides or "").split(","):
+        part = part.strip()
+        if ":" in part:
+            k, v = part.split(":", 1)
+            try:
+                out[k.strip()] = int(v)
+            except ValueError:
+                pass
+    return out
+
+
 def _search_one(key: str, query: str) -> dict:
     adapter = _resolve_adapter(key)
     if adapter is None:
@@ -267,6 +281,12 @@ def _search_one(key: str, query: str) -> dict:
         products = cached[1]
     else:
         session = adapter.build_session(token)
+        ov = _request_timeouts().get(key)
+        if ov:
+            try:
+                session.timeout = ov   # override por loja (lojas lentas)
+            except Exception:
+                pass
         products = [p.to_dict() for p in adapter.search(query, session)]
         refreshed = adapter.dump_token(session)
         if refreshed and refreshed != token:

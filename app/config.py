@@ -50,7 +50,10 @@ class Settings(BaseSettings):
 
     # Absolute so gunicorn and any CLI/one-off always use the same store.
     cache_dir: str = str(_ROOT / ".cache")
-    request_timeout: int = 25       # per-request seconds for supplier scraping
+    request_timeout: int = 40       # per-request seconds (busca e incremental -> loja lenta nao
+                                    # trava as outras, entao pode esperar mais)
+    # override por loja: "chave:seg,chave:seg" (ex.: "braile:60,agis:50") p/ lojas mais lentas
+    request_timeout_overrides: str = ""
     search_deadline: int = 12       # max seconds the COMBINED search waits before returning partial
                                     # results (a slow/hung supplier is marked timeout, not blocking)
     search_ttl: int = 120           # seconds to cache a (supplier, query) search result

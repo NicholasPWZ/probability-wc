@@ -111,18 +111,22 @@ class AgisAdapter(SupplierAdapter):
             image = (img_el.get("src") or img_el.get("data-src")) if img_el else None
             wp = it.select_one(".warehouse-price[data-product-sku]")
             sku = wp.get("data-product-sku") if wp else None
-            parsed.append((name, url, image, sku))
+            # marcador EXPLICITO de esgotado (nao confundir com "sem preco por estar deslogado")
+            unavailable = "indispon" in (wp.get_text(" ").lower() if wp else "")
+            parsed.append((name, url, image, sku, unavailable))
             if sku and sku not in skus:
                 skus.append(sku)
 
         prices = self._prices(session, skus)
         out = []
-        for name, url, image, sku in parsed:
+        for name, url, image, sku, unavailable in parsed:
             tiers_raw = sorted(prices.get(sku or "", []), key=lambda x: x[1])
             price = tiers_raw[0][1] if tiers_raw else None
             multi = len(tiers_raw) > 1
             tiers = [Tier(price=pp, region=(f"Dep {wh}" if multi else None)) for wh, pp in tiers_raw] \
                 if price is not None else []
+            # com preco = disponivel; "Indisponivel" explicito = esgotado; senao desconhecido (None)
+            in_stock = True if price is not None else (False if unavailable else None)
             out.append(Product(
                 name=name or sku or "(sem nome)",
                 url=url,
@@ -130,7 +134,7 @@ class AgisAdapter(SupplierAdapter):
                 price_text=_brl(price),
                 image=image,
                 sku=sku,
-                in_stock=(price is not None),
+                in_stock=in_stock,
                 tiers=tiers,
             ))
         return out
