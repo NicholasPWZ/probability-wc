@@ -273,7 +273,10 @@ def _search_one(key: str, query: str) -> dict:
             store.set_token(key, refreshed)   # renew-on-use (sliding session)
         _search_cache[ck] = (now, products)
     priced = [p for p in products if p.get("price") is not None]
-    needs_auth = bool(products) and not priced   # results but no prices → likely logged out (raw)
+    # "sem preco" pode ser DESLOGADO (sessao caiu) OU ESGOTADO (fora de estoque). So sinaliza
+    # needsAuth se ha itens sem preco que NAO estao marcados como esgotados.
+    needs_auth = (not priced) and any(
+        p.get("price") is None and p.get("in_stock") is not False for p in products)
     # relevance filter: some suppliers return "featured"/loose junk when they find nothing
     shown = products
     if get_settings().search_filter:

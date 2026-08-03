@@ -19,6 +19,10 @@ from app.suppliers.base import Product, SupplierAdapter, Tier
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
        "Chrome/149.0.0.0 Safari/537.36")
 
+# marcadores de "fora de estoque" no texto do item (sites genericos raramente tem seletor de estoque,
+# mas quase sempre trocam o botao "comprar" por "esgotado"/"avise-me")
+_OOS_MARKERS = ("esgotado", "esgotada", "indispon", "avise", "fora de estoque", "sem estoque")
+
 
 def _txt(el) -> str:
     return re.sub(r"\s+", " ", el.get_text(" ", strip=True)).strip() if el else ""
@@ -128,13 +132,17 @@ class GenericAdapter(SupplierAdapter):
             stock_txt = _txt(it.select_one(sel["stock"])) if sel.get("stock") else ""
             if not name and not price:
                 continue
+            # fora de estoque: seletor de estoque (se configurado) OU marcador no texto do item
+            oos = any(m in _txt(it).lower() for m in _OOS_MARKERS)
+            in_stock = (False if oos
+                        else None if not stock_txt else ("indispon" not in stock_txt.lower()))
             out.append(Product(
                 name=name or "(sem nome)",
                 url=urljoin(self.base_url + "/", href) if href else self.base_url,
                 price=price,
                 price_text=_price_text(price, self.locale),
                 image=urljoin(self.base_url + "/", img) if img else None,
-                in_stock=None if not stock_txt else ("indispon" not in stock_txt.lower()),
+                in_stock=in_stock,
                 tiers=[Tier(price=price)] if price is not None else [],
             ))
         return out
