@@ -647,22 +647,45 @@ function nameSig(p){
   const n=(p.name||'').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,' ');
   return new Set(n.split(' ').filter(t=>t.length>=3 && !_STOP.has(t)));
 }
-function _jac(a,b){ let i=0; for(const x of a) if(b.has(x)) i++; const u=a.size+b.size-i; return u?i/u:0; }
+// palavras de CATEGORIA/DESCRITOR — nunca sao identificadoras; excluidas do match distintivo
+// (senao "cadeira"/"mouse"/"preto" juntariam modelos diferentes da mesma marca).
+const _MATCH_STOP=new Set(['mouse','teclado','cadeira','monitor','notebook','headset','fone','fones','cabo',
+ 'carregador','fonte','gabinete','placa','memoria','ssd','hd','webcam','caixa','som','impressora','mousepad',
+ 'pad','kit','combo','gamer','wireless','bluetooth','usb','rgb','led','optico','otico','mecanico','recarregavel',
+ 'portatil','original','preto','preta','branco','branca','azul','vermelho','vermelha','verde','cinza','rosa',
+ 'prata','dourado','pol','polegadas','sem','fio','novo','nova','und','unid','pecas']);
+const _BRANDS=new Set(['logitech','redragon','multilaser','dell','hp','lenovo','acer','asus','samsung','lg',
+ 'intelbras','tplink','mercusys','kingston','sandisk','seagate','wd','kmex','c3tech','oex','genius','microsoft',
+ 'razer','hyperx','corsair','thunderx3','husky','motospeed','xtrike','fortrek','maxprint','elgin','philips','jbl',
+ 'edifier','sony','xiaomi','positivo','gigabyte','msi','galax','pcyes','knup','exbom','vinik','rise','aoc','targus',
+ 'geonav','trust','xcell','duex','bright','a4tech','marvo','evolut','vinik','feir','hayom']);
+function brandOf(p){
+  if(p.brand && typeof p.brand==='string' && p.brand.trim()) return p.brand.trim().toLowerCase().replace(/[^a-z0-9]/g,'');
+  for(const t of nameSig(p)) if(_BRANDS.has(t)) return t;   // detecta a marca no nome (fornecedor sem campo)
+  return '';
+}
 function groupItems(items){
   const parent=items.map((_,i)=>i);
   const find=x=>{ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; };
+  const uni=(a,b)=>{ parent[find(a)]=find(b); };
+  // tier 1+2: EAN + codigos (part-number / modelo no nome) -> match forte
   const codeMap=new Map();
-  items.forEach((p,i)=>{ for(const c of codeTokens(p)){ if(codeMap.has(c)) parent[find(i)]=find(codeMap.get(c)); else codeMap.set(c,i); } });
-  // 2a passada: nomes MUITO parecidos (produtos sem codigo em comum). Conservador: marcas iguais,
-  // Jaccard alto E >=4 palavras significativas em comum -> evita juntar produtos diferentes da mesma marca.
+  items.forEach((p,i)=>{ for(const c of codeTokens(p)){ if(codeMap.has(c)) uni(i,codeMap.get(c)); else codeMap.set(c,i); } });
+  // tier 3: MARCA + tokens DISTINTIVOS (raros no conjunto de resultados). Self-tuning: numa busca
+  // "mouse", a palavra "mouse" e comum (DF alto -> ignorada); o modelo/linha (raro) e o que casa.
+  // Junta se compartilham >=2 tokens raros, OU >=1 raro com a MESMA marca. Marcas diferentes nunca juntam.
   const sigs=items.map(nameSig);
+  const df=new Map(); sigs.forEach(s=>s.forEach(t=>df.set(t,(df.get(t)||0)+1)));
+  const maxDF=Math.max(2, Math.floor(items.length*0.4));
+  const brands=items.map(brandOf);
+  const distinct=sigs.map((s,i)=>new Set([...s].filter(t=>df.get(t)<=maxDF && t!==brands[i] && !_MATCH_STOP.has(t))));
   for(let i=0;i<items.length;i++){
     for(let j=i+1;j<items.length;j++){
       if(find(i)===find(j)) continue;
-      const bi=(items[i].brand||'').toLowerCase(), bj=(items[j].brand||'').toLowerCase();
-      if(bi&&bj&&bi!==bj) continue;
-      let inter=0; for(const x of sigs[i]) if(sigs[j].has(x)) inter++;
-      if(inter>=4 && _jac(sigs[i],sigs[j])>=0.82) parent[find(i)]=find(j);
+      if(brands[i]&&brands[j]&&brands[i]!==brands[j]) continue;
+      let shared=0; for(const t of distinct[i]) if(distinct[j].has(t)) shared++;
+      const sameBrand=brands[i]&&brands[j]&&brands[i]===brands[j];
+      if(shared>=2 || (shared>=1 && sameBrand)) uni(i,j);
     }
   }
   const g=new Map();
