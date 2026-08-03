@@ -663,6 +663,12 @@ function brandOf(p){
   for(const t of nameSig(p)) if(_BRANDS.has(t)) return t;   // detecta a marca no nome (fornecedor sem campo)
   return '';
 }
+// cores — variantes de cor sao produtos DIFERENTES (mesmo modelo, cor diferente = SKU diferente)
+const _COLORS=new Set(['preto','preta','black','branco','branca','white','cinza','gray','grey','grafite',
+ 'chumbo','azul','blue','vermelho','vermelha','red','verde','green','rosa','rose','pink','amarelo','amarela',
+ 'yellow','roxo','roxa','purple','laranja','orange','prata','silver','dourado','dourada','gold','bege','marrom','brown']);
+function colorsOf(p){ const s=new Set(); for(const t of nameSig(p)) if(_COLORS.has(t)) s.add(t); return s; }
+function _disjointColor(a,b){ if(!a.size||!b.size) return false; for(const c of a) if(b.has(c)) return false; return true; }
 function groupItems(items){
   const parent=items.map((_,i)=>i);
   const find=x=>{ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; };
@@ -672,6 +678,7 @@ function groupItems(items){
   // colisao de codigo entre marcas e o encadeamento por fragmentos/descritores.
   const eans=items.map(p=> p.ean ? _normCode(p.ean) : '');
   const brands=items.map(brandOf);
+  const colors=items.map(colorsOf);
   const sigs=items.map(nameSig);
   // codigos por item: part-number/nome (do codeTokens, sem o EAN) + codigos de modelo do nome (M90, EC3…)
   const codes=items.map((p,i)=>{
@@ -685,6 +692,7 @@ function groupItems(items){
       if(find(i)===find(j)) continue;
       if(eans[i] && eans[i].length>=8 && eans[i]===eans[j]){ uni(i,j); continue; }
       if(brands[i]&&brands[j]&&brands[i]!==brands[j]) continue;   // marcas diferentes nunca juntam por codigo
+      if(_disjointColor(colors[i],colors[j])) continue;           // cores diferentes = variantes distintas
       if(share(codes[i],codes[j])) uni(i,j);
     }
   }
