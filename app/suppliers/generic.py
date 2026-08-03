@@ -112,9 +112,20 @@ class GenericAdapter(SupplierAdapter):
     def search(self, query: str, session) -> list[Product]:
         if "{q}" not in self.search_url:
             raise ValueError("searchUrl precisa conter {q}")
-        url = self.search_url.replace("{q}", quote(query))
-        r = session.get(url)
-        return self.parse(r.text)
+        base = self.search_url.replace("{q}", quote(query))
+        param = (self.config.get("pageParam") or "").strip()
+        pages = max(1, get_settings().search_pages)
+        out: list[Product] = []
+        seen: set[str] = set()
+        for page in range(1, pages + 1):
+            url = base if (page == 1 or not param) else base + ("&" if "?" in base else "?") + f"{param}={page}"
+            new = [p for p in self.parse(session.get(url).text) if (p.url or p.name) not in seen]
+            for p in new:
+                seen.add(p.url or p.name)
+            out.extend(new)
+            if not param or not new:   # sem paginacao configurada, ou pagina sem novidade -> para
+                break
+        return out
 
     def parse(self, html: str) -> list[Product]:
         soup = BeautifulSoup(html, "html.parser")

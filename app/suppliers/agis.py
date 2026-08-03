@@ -96,26 +96,41 @@ class AgisAdapter(SupplierAdapter):
         return out
 
     def search(self, query: str, session) -> list[Product]:
-        r = session.get(_SEARCH + quote(query))
-        soup = BeautifulSoup(r.text, "html.parser")
-        items = soup.select(".product-item")
-        parsed = []            # (name, url, image, sku)
+        pages = max(1, get_settings().search_pages)
+        parsed = []            # (name, url, image, sku, unavailable)
         skus: list[str] = []
-        for it in items:
-            link = it.select_one("a.product-item-link")
-            if not link:
-                continue
-            name = link.get_text(strip=True)
-            url = link.get("href") or _BASE
-            img_el = it.select_one("img.product-image-photo") or it.find("img")
-            image = (img_el.get("src") or img_el.get("data-src")) if img_el else None
-            wp = it.select_one(".warehouse-price[data-product-sku]")
-            sku = wp.get("data-product-sku") if wp else None
-            # marcador EXPLICITO de esgotado (nao confundir com "sem preco por estar deslogado")
-            unavailable = "indispon" in (wp.get_text(" ").lower() if wp else "")
-            parsed.append((name, url, image, sku, unavailable))
-            if sku and sku not in skus:
-                skus.append(sku)
+        seen_sku: set = set()
+        final = None
+        for page in range(1, pages + 1):
+            if page == 1:
+                r = session.get(_SEARCH + quote(query))
+                final = str(r.url)   # a busca redireciona p/ a categoria; paginar na URL FINAL
+            else:
+                r = session.get(final + ("&" if "?" in final else "?") + f"p={page}")
+            soup = BeautifulSoup(r.text, "html.parser")
+            page_added = 0
+            for it in soup.select(".product-item"):
+                link = it.select_one("a.product-item-link")
+                if not link:
+                    continue
+                name = link.get_text(strip=True)
+                url = link.get("href") or _BASE
+                img_el = it.select_one("img.product-image-photo") or it.find("img")
+                image = (img_el.get("src") or img_el.get("data-src")) if img_el else None
+                wp = it.select_one(".warehouse-price[data-product-sku]")
+                sku = wp.get("data-product-sku") if wp else None
+                if sku and sku in seen_sku:
+                    continue   # dedup entre paginas
+                if sku:
+                    seen_sku.add(sku)
+                # marcador EXPLICITO de esgotado (nao confundir com "sem preco por estar deslogado")
+                unavailable = "indispon" in (wp.get_text(" ").lower() if wp else "")
+                parsed.append((name, url, image, sku, unavailable))
+                page_added += 1
+                if sku and sku not in skus:
+                    skus.append(sku)
+            if page_added == 0:
+                break
 
         prices = self._prices(session, skus)
         out = []

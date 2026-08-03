@@ -118,27 +118,41 @@ class BraileAdapter(SupplierAdapter):
         return f"{_BASE}/produtos/{quote(b64, safe='')}"
 
     def search(self, query: str, session) -> list[Product]:
-        j = self._call(session, query)
-        # sem resultado a API pode devolver collections=[null] -> o [0] vira None; garante lista
-        prods = ((j or {}).get("collections") or [[]])[0] or []
-        out = []
-        for it in prods:
-            tp = it.get("itemTabelaPreco") or {}
-            price = tp.get("vlPreco") or None
-            stock = it.get("qtEstoque")
-            name = re.sub(r"\s*\[[^\]]+\]\s*$", "", it.get("dsProduto") or it.get("cdProduto") or "").strip()
-            out.append(Product(
-                name=name or it.get("cdProduto"),
-                url=self._product_url(it),
-                price=price,
-                price_text=_brl(price),
-                brand=_as_text(it.get("marca")) or _as_text(it.get("cdMarca")) or None,
-                sku=it.get("cdProduto"),
-                ean=(_as_text(it.get("cdBarra")) or _as_text(it.get("nrCodBarra"))
-                     or _as_text(it.get("dsCodigoBarra")) or _as_text(it.get("ean"))
-                     or _as_text(it.get("gtin")) or _as_text(it.get("codigoBarras")) or None),
-                in_stock=(stock or 0) > 0 if stock is not None else None,
-                stock=int(stock) if stock else None,
-                tiers=[Tier(price=price)] if price else [],
-            ))
+        pages = max(1, get_settings().search_pages)
+        out: list[Product] = []
+        seen: set = set()
+        for page in range(1, pages + 1):
+            j = self._call(session, query, page)
+            # sem resultado a API pode devolver collections=[null] -> o [0] vira None; garante lista
+            prods = ((j or {}).get("collections") or [[]])[0] or []
+            if not prods:
+                break
+            added = 0
+            for it in prods:
+                sku = it.get("cdProduto")
+                if sku and sku in seen:
+                    continue
+                if sku:
+                    seen.add(sku)
+                tp = it.get("itemTabelaPreco") or {}
+                price = tp.get("vlPreco") or None
+                stock = it.get("qtEstoque")
+                name = re.sub(r"\s*\[[^\]]+\]\s*$", "", it.get("dsProduto") or it.get("cdProduto") or "").strip()
+                out.append(Product(
+                    name=name or sku,
+                    url=self._product_url(it),
+                    price=price,
+                    price_text=_brl(price),
+                    brand=_as_text(it.get("marca")) or _as_text(it.get("cdMarca")) or None,
+                    sku=sku,
+                    ean=(_as_text(it.get("cdBarra")) or _as_text(it.get("nrCodBarra"))
+                         or _as_text(it.get("dsCodigoBarra")) or _as_text(it.get("ean"))
+                         or _as_text(it.get("gtin")) or _as_text(it.get("codigoBarras")) or None),
+                    in_stock=(stock or 0) > 0 if stock is not None else None,
+                    stock=int(stock) if stock else None,
+                    tiers=[Tier(price=price)] if price else [],
+                ))
+                added += 1
+            if added < 24:   # pageLines=24 -> pagina incompleta = ultima
+                break
         return out

@@ -185,12 +185,21 @@ def ensure_seed(seed: list[dict]) -> None:
                              "name": sd.get("name"), "baseUrl": sd.get("baseUrl"),
                              "config": sd.get("config"), "enabled": True, "token": "", "note": ""})
                 changed = True
-            elif row is not None and sd.get("kind") and row.get("kind") != sd["kind"]:
-                # kind changed in SEED (e.g. generic -> builtin): reconcile, drop stale config
-                row["kind"] = sd["kind"]
-                if sd["kind"] != "generic":
-                    row.pop("config", None)
-                changed = True
+            elif row is not None:
+                if sd.get("kind") and row.get("kind") != sd["kind"]:
+                    # kind changed in SEED (e.g. generic -> builtin): reconcile, drop stale config
+                    row["kind"] = sd["kind"]
+                    if sd["kind"] != "generic":
+                        row.pop("config", None)
+                    changed = True
+                # merge NEW top-level config keys from SEED (e.g. pageParam) into an existing generic
+                # row WITHOUT overwriting the user's edits (only adds missing keys).
+                rcfg, scfg = row.get("config"), (sd.get("config") or {})
+                if isinstance(rcfg, dict):
+                    for k, v in scfg.items():
+                        if k not in rcfg:
+                            rcfg[k] = v
+                            changed = True
             seeded_keys.add(sd["key"])
         data["seededKeys"] = sorted(seeded_keys)
         data["seeded"] = True

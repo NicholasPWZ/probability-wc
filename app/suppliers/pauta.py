@@ -84,8 +84,18 @@ class PautaAdapter(SupplierAdapter):
         return r.status_code == 200 and "login" not in loc
 
     def search(self, query: str, session) -> list[Product]:
-        r = session.get(f"{_BASE}/search?q={quote(query)}")
-        return self._parse(r.text)
+        pages = max(1, get_settings().search_pages)
+        out: list[Product] = []
+        seen: set = set()
+        for page in range(1, pages + 1):
+            url = f"{_BASE}/search?q={quote(query)}" + (f"&pagenumber={page}" if page > 1 else "")
+            new = [p for p in self._parse(session.get(url).text) if (p.url or p.name) not in seen]
+            for p in new:
+                seen.add(p.url or p.name)
+            out.extend(new)
+            if not new:   # pagina sem novidade -> ultima
+                break
+        return out
 
     def _parse(self, html: str) -> list[Product]:
         out: list[Product] = []
