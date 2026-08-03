@@ -41,6 +41,18 @@ def test_gaucha_generic_parser():
     assert p.name and p.url and p.price > 0
 
 
+def test_mercadao_generic_parser():
+    """Mercadao (Loja Integrada, precos publicos) via o motor generico → produtos com preco."""
+    from app.suppliers.generic import GenericAdapter
+    cfg = _seed_config("mercadao")
+    a = GenericAdapter("mercadao", "Mercadao", "https://www.mercadaodainformatica.com.br", cfg)
+    prods = a.parse(_load("mercadao_busca.html.gz"))
+    assert len(prods) >= 20, f"esperava >=20 produtos, veio {len(prods)}"
+    priced = [p for p in prods if p.price is not None]
+    assert len(priced) >= len(prods) * 0.8, "maioria deve ter preco (mercadao e publico)"
+    assert priced[0].name and priced[0].url and priced[0].price > 0
+
+
 def test_pauta_parser_structure():
     """Pauta (nopCommerce) product blocks parse (guest page has no prices, but blocks/titles must parse)."""
     from app.suppliers.pauta import PautaAdapter

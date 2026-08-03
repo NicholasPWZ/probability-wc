@@ -43,6 +43,14 @@ SEED = [
                 "authMode": "none", "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
                 "selectors": {"item": ".product", "name": ".product-name", "price": ".current-price",
                               "link": ".product-info", "image": ".image img", "stock": ""}}},
+    # Mercadao da Informatica (Loja Integrada). Preco PUBLICO (sem login) -> authMode none. Card da
+    # listagem e li.span4; preco em .preco-promocional; imagem real no src (CDN awsli).
+    {"key": "mercadao", "kind": "generic", "name": "Mercadao da Informatica",
+     "baseUrl": "https://www.mercadaodainformatica.com.br",
+     "config": {"searchUrl": "https://www.mercadaodainformatica.com.br/buscar?q={q}",
+                "authMode": "none", "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
+                "selectors": {"item": "li.span4", "name": ".nome-produto", "price": ".preco-promocional",
+                              "link": "a", "image": "img", "stock": ""}}},
     # Agis (Magento B2B). PRECO carregado por JS (POST /integration/listing/price) -> adapter em
     # CODIGO (app/suppliers/agis.py), nao generic. Auth por cookie + auto-login (receita em autologin.py).
     {"key": "agis", "kind": "builtin", "name": "Agis", "baseUrl": "https://vendas.agis.com.br"},
