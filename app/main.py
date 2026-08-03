@@ -246,8 +246,10 @@ def _row_no_auth(row: dict | None) -> bool:
 
 
 def _supplier_ready(row: dict) -> bool:
-    """Searchable = enabled AND (has a token OR needs no auth)."""
-    return bool(row.get("enabled")) and (bool(row.get("hasToken")) or _row_no_auth(row))
+    """Searchable = enabled AND (has a token OR needs no auth). Aceita linha publica
+    (`hasToken`, de list_suppliers) OU crua (`token`, de get_row)."""
+    has_token = bool(row.get("hasToken") or row.get("token"))
+    return bool(row.get("enabled")) and (has_token or _row_no_auth(row))
 
 
 def _search_one(key: str, query: str) -> dict:
@@ -335,17 +337,12 @@ def _search_one_safe(key: str, query: str) -> dict:
 @compubot.get("/api/search/one", dependencies=[Depends(auth.require_auth)])
 async def api_search_one(q: str, supplier: str):
     """Busca UM fornecedor — a UI chama um destes por fornecedor em paralelo e mostra cada
-    resultado assim que chega (carregamento incremental; um lento nao segura os outros)."""
+    resultado assim que chega (carregamento incremental; um lento nao segura os outros).
+    Delega ao _search_one_safe, que ja faz a checagem correta de token/no-auth por fornecedor."""
     q = (q or "").strip()
     if len(q) < 2:
         raise HTTPException(status_code=400, detail="Digite ao menos 2 caracteres.")
-    key = (supplier or "").strip()
-    row = store.get_row(key)
-    if not row or not _supplier_ready(row):
-        name = (row or {}).get("name") or key
-        return {"key": key, "name": name, "ok": False,
-                "error": "nao configurado/sem token", "products": []}
-    return await run_in_threadpool(_search_one_safe, key, q)
+    return await run_in_threadpool(_search_one_safe, (supplier or "").strip(), q)
 
 
 # --------------------------------------------------------------------------
