@@ -652,7 +652,9 @@ function nameSig(p){
 // forte. NAO conta numero puro (ex.: "910" do part-number, comum a toda a marca -> encadeava grupos),
 // nem spec (8000dpi, 30cm), nem palavra (ergonomico). Isso e o que casa produtos por nome.
 const _SPEC_RE=/^\d+(dpi|dpis|ghz|mhz|hz|mah|wh|gb|tb|cm|mm|kg|w|v|pol|k|fps|nm|rpm|bit|bits|ppp|hz)$/;
-function _isModelCode(t){ return t.length>=3 && /[a-z]/.test(t) && /\d/.test(t) && !_SPEC_RE.test(t); }
+// >=2 DIGITOS: exclui soquetes/specs de 1 digito (am4/am5/am3/ddr5/usb3/fm2) que sao compartilhados
+// por muitos produtos e encadeavam grupos; modelos reais (M90/M170/9600X/G203) tem 2+ digitos.
+function _isModelCode(t){ return t.length>=3 && /[a-z]/.test(t) && (t.match(/\d/g)||[]).length>=2 && !_SPEC_RE.test(t); }
 const _BRANDS=new Set(['logitech','redragon','multilaser','dell','hp','lenovo','acer','asus','samsung','lg',
  'intelbras','tplink','mercusys','kingston','sandisk','seagate','wd','kmex','c3tech','oex','genius','microsoft',
  'razer','hyperx','corsair','thunderx3','husky','motospeed','xtrike','fortrek','maxprint','elgin','philips','jbl',
