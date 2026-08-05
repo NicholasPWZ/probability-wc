@@ -68,6 +68,7 @@
   /* preco ao cliente fixado manualmente (override da margem) */
   input.cp{width:96px}
   input.cp.ovr{outline:2px solid var(--accent2);outline-offset:-2px;font-weight:600}
+  input.dname{width:100%;max-width:280px;font-size:12px;margin-top:5px;padding:4px 8px}
   .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);
     border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
   @keyframes s{to{transform:rotate(360deg)}}
@@ -846,7 +847,7 @@ function addToCart(idx, ti){
   const ex = CART.find(x=>x.id===id);
   if(ex){ ex.qty=(ex.qty||1)+1; } else {
     CART.push({id, name, supplier:p.supplier, url:p.url, image:p.image,
-               cost:(cost!=null?cost:''), qty:1, markup:'', cprice:''});
+               cost:(cost!=null?cost:''), qty:1, markup:'', cprice:'', dname:''});
   }
   saveCart();
   const btn=event&&event.target; if(btn){ const t=btn.textContent; btn.textContent='✓'; setTimeout(()=>btn.textContent=t,900); }
@@ -869,7 +870,8 @@ function renderCart(){
     const sub = cu!=null?cu*qty:null; if(!isNaN(c)) totCost+=c*qty; if(sub!=null) totClient+=sub;
     return `<tr>
       <td data-label="Produto"><a href="${it.url}" target="_blank" rel="noopener"><b>${it.name}</b></a>
-        <div class="muted" style="font-size:12px">${it.supplier||''}</div></td>
+        <div class="muted" style="font-size:12px">${it.supplier||''}</div>
+        <input type="text" class="dname" value="${esc(it.dname||'')}" placeholder="Nome no PDF (opcional)" onchange="updateCart('${it.id}','dname',this.value)" title="Como o produto aparece pro cliente no PDF. Vazio = usa o nome acima. O fornecedor nunca aparece no PDF."></td>
       <td class="p" data-label="Custo un."><input type="number" step="0.01" value="${it.cost}" onchange="updateCart('${it.id}','cost',this.value)"></td>
       <td class="p" data-label="Qtd"><input type="number" step="1" min="1" value="${qty}" onchange="updateCart('${it.id}','qty',this.value)"></td>
       <td class="p" data-label="Margem %"><input type="number" step="1" placeholder="${globalMarkup()}" value="${it.markup}" onchange="updateCart('${it.id}','markup',this.value)"></td>
@@ -902,7 +904,8 @@ function copyQuote(){
   const lines=['*Orçamento*',''];
   let tot=0;
   for(const it of CART){ const cu=clientUnit(it), qty=it.qty||1; if(cu==null) continue; const sub=cu*qty; tot+=sub;
-    lines.push(`• ${it.name} — ${qty}x ${brl(cu)} = ${brl(sub)}`); }
+    const nm=(it.dname||'').trim()||it.name;   // texto pro cliente usa o nome do PDF (sem fornecedor)
+    lines.push(`• ${nm} — ${qty}x ${brl(cu)} = ${brl(sub)}`); }
   lines.push('', `*Total: ${brl(tot)}*`);
   const text=lines.join('\n');
   navigator.clipboard.writeText(text).then(
@@ -917,7 +920,7 @@ function quotePayload(){
   return { id: EDITING_ID||null, title: ($('#cart-title')||{}).value||'',
     seller: ($('#cart-seller')||{}).value||'', sellerEmail: ($('#cart-seller-email')||{}).value||'',
     notes: ($('#cart-notes')||{}).value||'', markup: globalMarkup(),
-    items: CART.map(it=>({ name:it.name, supplier:it.supplier, url:it.url,
+    items: CART.map(it=>({ name:it.name, dname:it.dname, supplier:it.supplier, url:it.url,
                            cost:it.cost, qty:it.qty||1, markup:it.markup, cprice:it.cprice })) };
 }
 async function saveQuote(){
@@ -955,7 +958,7 @@ async function loadQuotes(){
 async function openQuote(id){
   try{
     const r=await fetch('/api/quotes/'+id); if(!r.ok) throw 0; const q=await r.json();
-    CART=(q.items||[]).map(it=>({ id:(it.supplier||'')+'|'+(it.url||it.name), name:it.name, supplier:it.supplier, url:it.url, image:null,
+    CART=(q.items||[]).map(it=>({ id:(it.supplier||'')+'|'+(it.url||it.name), name:it.name, dname:(it.dname||''), supplier:it.supplier, url:it.url, image:null,
       cost:(it.cost!=null?it.cost:''), qty:it.qty||1, markup:(it.markup==null?'':it.markup), cprice:(it.cprice==null?'':it.cprice) }));
     EDITING_ID=q.id;
     if($('#cart-title')) $('#cart-title').value=q.title||'';

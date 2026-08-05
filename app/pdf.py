@@ -174,15 +174,16 @@ def render_quote_pdf(quote: dict) -> bytes:
         qty = int(it.get("qty") or 1)
         cu = quotes.client_unit(it, quotes._num(quote.get("markup")) or 0.0)
         sub = round(cu * qty, 2) if cu is not None else None
-        name = _safe(it.get("name") or "(sem nome)")
-        supplier = _safe(it.get("supplier") or "")
+        # nome que o CLIENTE ve: override do vendedor (dname) OU o nome original.
+        # O fornecedor NAO aparece no PDF (vai direto pro cliente).
+        name = _safe((it.get("dname") or "").strip() or it.get("name") or "(sem nome)")
 
         # measure wrapped product name to size the row height
         x0, y0 = pdf.get_x(), pdf.get_y()
         line_h = 5
         lines = pdf.multi_cell(widths[0], line_h, name, dry_run=True, output="LINES")
         n_name = max(1, len(lines))
-        row_h = max(9, n_name * line_h + (4 if supplier else 0))
+        row_h = max(9, n_name * line_h + 2)
 
         if y0 + row_h > pdf.page_break_trigger:
             pdf.add_page()
@@ -197,12 +198,6 @@ def render_quote_pdf(quote: dict) -> bytes:
         pdf.set_xy(x0, y0 + 1)
         pdf.set_text_color(*_DARK)
         pdf.multi_cell(widths[0], line_h, name, align="L")
-        if supplier:
-            pdf.set_x(x0)
-            pdf.set_font("Helvetica", size=7.5)
-            pdf.set_text_color(*_MUTED)
-            pdf.cell(widths[0], 3.5, supplier)
-            pdf.set_font("Helvetica", size=9.5)
         # numeric columns, vertically centered-ish
         pdf.set_text_color(*_DARK)
         cy = y0 + (row_h - line_h) / 2

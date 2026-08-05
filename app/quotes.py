@@ -123,6 +123,7 @@ def save_quote(payload: dict) -> dict:
     for it in (payload.get("items") or []):
         items.append({
             "name": (it.get("name") or "").strip() or "(sem nome)",
+            "dname": (it.get("dname") or "").strip(),   # nome no PDF (opcional; vazio = usa o original)
             "supplier": (it.get("supplier") or "").strip(),
             "url": (it.get("url") or "").strip(),
             "cost": _num(it.get("cost")),
