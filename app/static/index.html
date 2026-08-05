@@ -294,11 +294,13 @@
             <div><label style="margin:0 0 4px;display:block;font-size:12px" class="muted">Qtd do conjunto</label>
               <input id="cart-finalqty" type="number" min="1" step="1" value="1" style="width:120px" oninput="saveDraft();renderCart()"></div>
           </div></div>
-        <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <div id="quote-status" class="hidden" style="margin-top:12px;font-size:13px;padding:8px 10px;border-radius:var(--r-sm);background:rgba(255,255,255,.04)"></div>
+        <div class="row" style="justify-content:flex-end;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn small" onclick="newQuote()">+ Novo</button>
           <button class="btn small" onclick="copyQuote()">Copiar texto</button>
           <button class="btn small danger" onclick="clearCart()">Limpar</button>
           <button class="btn small" onclick="exportQuotePdf()">Exportar PDF</button>
-          <button class="btn small primary" onclick="saveQuote()">Salvar orçamento</button>
+          <button class="btn small primary" id="btn-save-quote" onclick="saveQuote()">Salvar orçamento</button>
         </div>
         <p class="muted" style="font-size:12.5px;margin:10px 0 0">A margem por item (se preenchida) sobrepõe a padrão. Custo e quantidade são editáveis. O rascunho fica neste navegador; ao <b>Salvar</b>, o orçamento vai pro servidor (com número) e pode ser exportado em PDF. O PDF é a versão do cliente — não mostra custo nem margem.</p>
       </div>
@@ -825,6 +827,7 @@ function renderResults(){
 // ---------- cart / quote (rascunho no navegador; salvo/PDF no servidor) ----------
 let CART = [];
 let EDITING_ID = null;   // id do orcamento salvo em edicao (null = novo ao Salvar)
+let EDITING_NUMBER = null;   // numero do orcamento em edicao (so p/ exibir)
 function loadCart(){ try{ CART = JSON.parse(localStorage.getItem('compubot_cart')||'[]'); }catch(e){ CART=[]; }
   const gm = localStorage.getItem('compubot_markup'); if(gm && $('#cart-markup')) $('#cart-markup').value = gm;
   if($('#cart-title')) $('#cart-title').value = localStorage.getItem('compubot_qtitle')||'';
@@ -836,8 +839,29 @@ function loadCart(){ try{ CART = JSON.parse(localStorage.getItem('compubot_cart'
   if($('#cart-finalqty')) $('#cart-finalqty').value = localStorage.getItem('compubot_qfinalqty')||'1';
   toggleFinalName();
   EDITING_ID = localStorage.getItem('compubot_qid')||null;
+  EDITING_NUMBER = localStorage.getItem('compubot_qnum')||null;
+  updateQuoteStatus();
   updateCartBadge(); }
 function toggleFinalName(){ const on=!!(($('#cart-finalonly')||{}).checked); const r=$('#finalname-row'); if(r) r.classList.toggle('hidden', !on); }
+// mostra se esta CRIANDO um novo orcamento ou EDITANDO um ja salvo (evita sobrescrever sem querer)
+function updateQuoteStatus(){
+  const btn=$('#btn-save-quote'), st=$('#quote-status');
+  if(EDITING_ID){
+    if(btn) btn.textContent='Atualizar Nº '+(EDITING_NUMBER||'');
+    if(st){ st.innerHTML='✎ Editando o orçamento <b>Nº '+(EDITING_NUMBER||'')+'</b> — <b>Atualizar</b> salva por cima dele. Clique em <b>+ Novo</b> para criar um orçamento separado.'; st.classList.remove('hidden'); }
+  } else {
+    if(btn) btn.textContent='Salvar orçamento';
+    if(st){ st.classList.add('hidden'); st.innerHTML=''; }
+  }
+}
+// comeca um orcamento em branco (proximo Salvar cria um NOVO, nao sobrescreve o anterior)
+function newQuote(){
+  if(CART.length && !confirm('Começar um novo orçamento? O rascunho atual será limpo (os já salvos continuam na lista).')) return;
+  CART=[]; EDITING_ID=null; EDITING_NUMBER=null;
+  ['#cart-title','#cart-notes','#cart-finalname'].forEach(s=>{ if($(s)) $(s).value=''; });
+  if($('#cart-finalqty')) $('#cart-finalqty').value='1';
+  saveCart(); saveDraft(); renderCart(); updateQuoteStatus(); loadQuotes(); showToast('Novo orçamento');
+}
 function saveCart(){ localStorage.setItem('compubot_cart', JSON.stringify(CART));
   if($('#cart-markup')) localStorage.setItem('compubot_markup', $('#cart-markup').value); updateCartBadge(); }
 function saveDraft(){ localStorage.setItem('compubot_qtitle', ($('#cart-title')||{}).value||'');
@@ -847,7 +871,8 @@ function saveDraft(){ localStorage.setItem('compubot_qtitle', ($('#cart-title')|
   localStorage.setItem('compubot_qfinal', (($('#cart-finalonly')||{}).checked)?'1':'0');
   localStorage.setItem('compubot_qfinalname', ($('#cart-finalname')||{}).value||'');
   localStorage.setItem('compubot_qfinalqty', ($('#cart-finalqty')||{}).value||'1');
-  localStorage.setItem('compubot_qid', EDITING_ID||''); }
+  localStorage.setItem('compubot_qid', EDITING_ID||'');
+  localStorage.setItem('compubot_qnum', EDITING_NUMBER||''); }
 function updateCartBadge(){ const b=$('#cart-badge'); if(!b) return; const n=CART.reduce((s,i)=>s+(i.qty||1),0);
   b.textContent=n; b.classList.toggle('show', n>0); }
 function globalMarkup(){ const v=parseFloat(($('#cart-markup')||{}).value); return isNaN(v)?0:v; }
@@ -875,9 +900,9 @@ function updateCart(id, field, value){ const it=CART.find(x=>x.id===id); if(!it)
   else { it[field]=value; if(field==='cost'||field==='markup') it.cprice=''; }  // mexeu em custo/margem: volta ao automatico
   saveCart(); renderCart(); }
 function removeCart(id){ CART=CART.filter(x=>x.id!==id); saveCart(); renderCart(); }
-function clearCart(){ if(CART.length && !confirm('Limpar o carrinho?')) return; CART=[]; EDITING_ID=null;
+function clearCart(){ if(CART.length && !confirm('Limpar o carrinho?')) return; CART=[]; EDITING_ID=null; EDITING_NUMBER=null;
   ['#cart-title','#cart-notes'].forEach(s=>{ if($(s)) $(s).value=''; });   // vendedor/e-mail ficam (reaproveitados)
-  saveCart(); saveDraft(); renderCart(); loadQuotes(); }
+  saveCart(); saveDraft(); renderCart(); updateQuoteStatus(); loadQuotes(); }
 
 function renderCart(){
   const box=$('#cart-body'); if(!box) return; updateCartBadge();
@@ -961,7 +986,7 @@ async function saveQuote(){
   try{
     const r=await fetch('/api/quotes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(quotePayload())});
     if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.detail||('HTTP '+r.status)); }
-    const q=(await r.json()).quote; EDITING_ID=q.id; saveDraft();
+    const q=(await r.json()).quote; EDITING_ID=q.id; EDITING_NUMBER=q.number; saveDraft(); updateQuoteStatus();
     showToast('Orçamento salvo Nº '+q.number+' ✓'); loadQuotes(); return q;
   }catch(e){ showToast('Falha ao salvar: '+e.message,'err'); return null; }
 }
@@ -993,7 +1018,7 @@ async function openQuote(id){
     const r=await fetch('/api/quotes/'+id); if(!r.ok) throw 0; const q=await r.json();
     CART=(q.items||[]).map(it=>({ id:(it.supplier||'')+'|'+(it.url||it.name), name:it.name, dname:(it.dname||''), supplier:it.supplier, url:it.url, image:null,
       cost:(it.cost!=null?it.cost:''), qty:it.qty||1, markup:(it.markup==null?'':it.markup), cprice:(it.cprice==null?'':it.cprice) }));
-    EDITING_ID=q.id;
+    EDITING_ID=q.id; EDITING_NUMBER=q.number;
     if($('#cart-title')) $('#cart-title').value=q.title||'';
     if($('#cart-seller')) $('#cart-seller').value=q.seller||'';
     if($('#cart-seller-email')) $('#cart-seller-email').value=q.sellerEmail||'';
@@ -1003,14 +1028,14 @@ async function openQuote(id){
     if($('#cart-finalqty')) $('#cart-finalqty').value=(q.finalQty||1);
     toggleFinalName();
     if($('#cart-markup')) $('#cart-markup').value=(q.markup!=null?q.markup:30);
-    saveCart(); saveDraft(); renderCart(); loadQuotes();
+    saveCart(); saveDraft(); renderCart(); updateQuoteStatus(); loadQuotes();
     showToast('Orçamento #'+q.number+' aberto para edição');
   }catch(e){ showToast('Não consegui abrir o orçamento','err'); }
 }
 async function deleteQuote(id){
   if(!confirm('Apagar este orçamento? (não afeta o carrinho atual)')) return;
   try{ await fetch('/api/quotes/'+id,{method:'DELETE'});
-    if(EDITING_ID===id){ EDITING_ID=null; saveDraft(); }
+    if(EDITING_ID===id){ EDITING_ID=null; EDITING_NUMBER=null; saveDraft(); updateQuoteStatus(); }
     loadQuotes(); showToast('Orçamento apagado');
   }catch(e){ showToast('Falha ao apagar','err'); }
 }
