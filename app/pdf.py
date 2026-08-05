@@ -83,8 +83,17 @@ def render_quote_pdf(quote: dict) -> bytes:
     pdf.set_xy(41, top)
     pdf.set_font("Helvetica", "B", 15)
     pdf.set_text_color(*_DARK)
-    company = (quote.get("companyName") or "").strip() or cfg.company_name or "CompuJob"
-    pdf.cell(0, 8, _safe(company), ln=1)
+    company = _safe((quote.get("companyName") or "").strip() or cfg.company_name or "CompuJob")
+    cw = 76   # espaco antes do bloco ORCAMENTO (x=120): encolhe a fonte e, no limite, trunca
+    csize = 15
+    while csize > 9 and pdf.get_string_width(company) > cw:
+        csize -= 0.5
+        pdf.set_font_size(csize)
+    if pdf.get_string_width(company) > cw:
+        while company and pdf.get_string_width(company + "...") > cw:
+            company = company[:-1]
+        company += "..."
+    pdf.cell(cw, 8, company, ln=1)
     # linhas de contato da empresa (so as preenchidas no .env)
     info = []
     if (cfg.company_address or "").strip():
@@ -146,13 +155,13 @@ def render_quote_pdf(quote: dict) -> bytes:
                 pdf.set_xy(15, left_y)
                 pdf.set_font("Helvetica", "B", 11)
                 pdf.set_text_color(*_DARK)
-                pdf.cell(90, 6, _safe(client))
-                left_y += 6
+                pdf.multi_cell(88, 5.5, _safe(client), align="L")   # quebra dentro da coluna (nao invade VENDEDOR)
+                left_y = pdf.get_y() + 0.5
             pdf.set_font("Helvetica", size=9)
             pdf.set_text_color(*_MUTED)
             for line in client_lines:
                 pdf.set_xy(15, left_y)
-                pdf.multi_cell(92, 4.5, _safe(line))
+                pdf.multi_cell(88, 4.5, _safe(line), align="L")
                 left_y = pdf.get_y()
         # coluna VENDEDOR (direita)
         right_y = by
@@ -166,14 +175,14 @@ def render_quote_pdf(quote: dict) -> bytes:
                 pdf.set_xy(110, right_y)
                 pdf.set_font("Helvetica", "B", 10.5)
                 pdf.set_text_color(*_DARK)
-                pdf.cell(85, 5.5, _safe(seller))
-                right_y += 5.5
+                pdf.multi_cell(83, 5.5, _safe(seller), align="L")
+                right_y = pdf.get_y() + 0.5
             if seller_email:
                 pdf.set_xy(110, right_y)
                 pdf.set_font("Helvetica", size=9)
                 pdf.set_text_color(*_MUTED)
-                pdf.cell(85, 5, _safe(seller_email))
-                right_y += 5
+                pdf.multi_cell(83, 5, _safe(seller_email), align="L")
+                right_y = pdf.get_y()
         pdf.set_y(max(left_y, right_y) + 4)
 
     # ---- itens ----------------------------------------------------------
