@@ -18,6 +18,7 @@ from app import quotes
 from app.config import get_settings
 
 _LOGO = Path(__file__).parent / "static" / "compujob-logo.png"
+_WA = Path(__file__).parent / "static" / "whatsapp.png"   # icone no lugar de "Cel:" (celular = WhatsApp)
 
 # accent (teal) + neutral grays
 _ACCENT = (13, 148, 136)
@@ -94,24 +95,38 @@ def render_quote_pdf(quote: dict) -> bytes:
             company = company[:-1]
         company += "..."
     pdf.cell(cw, 8, company, ln=1)
-    # linhas de contato da empresa (so as preenchidas no .env)
-    info = []
-    if (cfg.company_address or "").strip():
-        info.append(cfg.company_address.strip())
-    phones = " - ".join(x for x in [
-        ("Tel: " + cfg.company_phone.strip()) if (cfg.company_phone or "").strip() else "",
-        ("Cel: " + cfg.company_mobile.strip()) if (cfg.company_mobile or "").strip() else "",
-    ] if x)
-    if phones:
-        info.append(phones)
-    if (cfg.company_cnpj or "").strip():
-        info.append("CNPJ: " + cfg.company_cnpj.strip())
+    # linhas de contato: endereco, telefones (celular com icone do WhatsApp no lugar de "Cel:"),
+    # e CNPJ da empresa (editavel; default = .env). So as preenchidas aparecem.
+    addr = (cfg.company_address or "").strip()
+    phone = (cfg.company_phone or "").strip()
+    mobile = (cfg.company_mobile or "").strip()
+    comp_cnpj = (quote.get("companyCnpj") or "").strip() or (cfg.company_cnpj or "").strip()
     pdf.set_font("Helvetica", size=8.5)
     pdf.set_text_color(*_MUTED)
     iy = top + 8.5
-    for line in info:
+    if addr:
         pdf.set_xy(41, iy)
-        pdf.cell(74, 4, _safe(line))
+        pdf.cell(74, 4, _safe(addr))
+        iy += 4
+    if phone or mobile:
+        x = 41.0
+        if phone:
+            pdf.set_xy(41, iy)
+            pdf.cell(pdf.get_string_width("Tel: " + phone) + (5 if mobile else 0), 4, _safe("Tel: " + phone))
+            x = pdf.get_x()
+        if mobile:
+            if _WA.exists():
+                try:
+                    pdf.image(str(_WA), x=x, y=iy + 0.15, w=3.7, h=3.7)
+                except Exception:
+                    pass
+                x += 4.8
+            pdf.set_xy(x, iy)
+            pdf.cell(50, 4, _safe(mobile))
+        iy += 4
+    if comp_cnpj:
+        pdf.set_xy(41, iy)
+        pdf.cell(74, 4, _safe("CNPJ: " + comp_cnpj))
         iy += 4
 
     pdf.set_xy(120, top)

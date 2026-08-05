@@ -307,8 +307,12 @@
         <div class="card">
           <div class="sec">
             <div class="sec-title">Empresa, cliente e vendedor</div>
-            <div style="margin-bottom:12px"><label style="margin:0 0 4px;display:block">Nome da empresa <span class="muted">(cabeçalho do PDF)</span></label>
-              <input id="cart-company" type="text" placeholder="CompuJob" style="width:100%" onchange="saveDraft()"></div>
+            <div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:12px">
+              <div style="flex:2;min-width:200px"><label style="margin:0 0 4px;display:block">Nome da empresa <span class="muted">(cabeçalho do PDF)</span></label>
+                <input id="cart-company" type="text" placeholder="CompuJob" style="width:100%" onchange="saveDraft()"></div>
+              <div style="flex:1;min-width:160px"><label style="margin:0 0 4px;display:block">CNPJ da empresa</label>
+                <input id="cart-company-cnpj" type="text" placeholder="00.000.000/0001-00" style="width:100%" onchange="saveDraft()"></div>
+            </div>
             <div class="row" style="gap:12px;flex-wrap:wrap;align-items:flex-end">
               <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">Cliente</label>
                 <input id="cart-title" type="text" placeholder="Ex.: João da Silva" style="width:100%" onchange="saveDraft()"></div>
@@ -471,7 +475,7 @@ function priceCell(p, i){
 async function boot(){
   try{
     const c = await api('/api/config');
-    APP_COMPANY_DEFAULT = c.company || '';
+    APP_COMPANY_DEFAULT = c.company || ''; APP_CNPJ_DEFAULT = c.companyCnpj || '';
     if(c.authed){ enterApp(); }
     else { $('#login').classList.remove('hidden'); if(!c.appConfigured) $('#login-msg').textContent='Defina APP_PASSWORD no servidor.'; }
   }catch(e){ $('#login').classList.remove('hidden'); }
@@ -895,10 +899,12 @@ let CART = [];
 let EDITING_ID = null;   // id do orcamento salvo em edicao (null = novo ao Salvar)
 let EDITING_NUMBER = null;   // numero do orcamento em edicao (so p/ exibir)
 let APP_COMPANY_DEFAULT = '';   // default do nome da empresa (vem do .env via /api/config)
+let APP_CNPJ_DEFAULT = '';      // default do CNPJ da empresa (vem do .env via /api/config)
 function loadCart(){ try{ CART = JSON.parse(localStorage.getItem('compubot_cart')||'[]'); }catch(e){ CART=[]; }
   const gm = localStorage.getItem('compubot_markup'); if(gm && $('#cart-markup')) $('#cart-markup').value = gm;
   if($('#cart-title')) $('#cart-title').value = localStorage.getItem('compubot_qtitle')||'';
   if($('#cart-company')) $('#cart-company').value = localStorage.getItem('compubot_qcompany') || APP_COMPANY_DEFAULT || '';
+  if($('#cart-company-cnpj')) $('#cart-company-cnpj').value = localStorage.getItem('compubot_qcompanycnpj') || APP_CNPJ_DEFAULT || '';
   try{ setClientLines(JSON.parse(localStorage.getItem('compubot_qclines')||'[]')); }catch(e){ setClientLines([]); }
   if($('#cart-seller')) $('#cart-seller').value = localStorage.getItem('compubot_qseller')||'';
   if($('#cart-seller-email')) $('#cart-seller-email').value = localStorage.getItem('compubot_qsemail')||'';
@@ -936,6 +942,7 @@ function saveCart(){ localStorage.setItem('compubot_cart', JSON.stringify(CART))
   if($('#cart-markup')) localStorage.setItem('compubot_markup', $('#cart-markup').value); updateCartBadge(); }
 function saveDraft(){ localStorage.setItem('compubot_qtitle', ($('#cart-title')||{}).value||'');
   localStorage.setItem('compubot_qcompany', ($('#cart-company')||{}).value||'');
+  localStorage.setItem('compubot_qcompanycnpj', ($('#cart-company-cnpj')||{}).value||'');
   localStorage.setItem('compubot_qclines', JSON.stringify(clientLinesVals()));
   localStorage.setItem('compubot_qseller', ($('#cart-seller')||{}).value||'');
   localStorage.setItem('compubot_qsemail', ($('#cart-seller-email')||{}).value||'');
@@ -1068,7 +1075,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
 function fmtDate(ts){ if(!ts) return ''; try{ return new Date(ts*1000).toLocaleDateString('pt-BR'); }catch(e){ return ''; } }
 function quotePayload(){
   return { id: EDITING_ID||null, title: ($('#cart-title')||{}).value||'',
-    clientLines: clientLinesVals(), companyName: ($('#cart-company')||{}).value||'',
+    clientLines: clientLinesVals(), companyName: ($('#cart-company')||{}).value||'', companyCnpj: ($('#cart-company-cnpj')||{}).value||'',
     seller: ($('#cart-seller')||{}).value||'', sellerEmail: ($('#cart-seller-email')||{}).value||'',
     notes: ($('#cart-notes')||{}).value||'', markup: globalMarkup(),
     finalOnly: !!(($('#cart-finalonly')||{}).checked), finalName: ($('#cart-finalname')||{}).value||'',
@@ -1117,6 +1124,7 @@ async function openQuote(id){
     EDITING_ID=q.id; EDITING_NUMBER=q.number;
     if($('#cart-title')) $('#cart-title').value=q.title||'';
     if($('#cart-company')) $('#cart-company').value=q.companyName||APP_COMPANY_DEFAULT||'';
+    if($('#cart-company-cnpj')) $('#cart-company-cnpj').value=q.companyCnpj||APP_CNPJ_DEFAULT||'';
     setClientLines(q.clientLines||[]);
     if($('#cart-seller')) $('#cart-seller').value=q.seller||'';
     if($('#cart-seller-email')) $('#cart-seller-email').value=q.sellerEmail||'';

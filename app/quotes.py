@@ -124,6 +124,7 @@ def save_quote(payload: dict) -> dict:
     title = (payload.get("title") or "").strip()
     client_lines = [str(x).strip() for x in (payload.get("clientLines") or []) if str(x).strip()]
     company_name = (payload.get("companyName") or "").strip()
+    company_cnpj = (payload.get("companyCnpj") or "").strip()
     seller = (payload.get("seller") or "").strip()
     seller_email = (payload.get("sellerEmail") or "").strip()
     notes = (payload.get("notes") or "").strip()
@@ -156,6 +157,7 @@ def save_quote(payload: dict) -> dict:
         row["title"] = title
         row["clientLines"] = client_lines
         row["companyName"] = company_name
+        row["companyCnpj"] = company_cnpj
         row["seller"] = seller
         row["sellerEmail"] = seller_email
         row["notes"] = notes
