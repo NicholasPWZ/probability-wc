@@ -83,7 +83,8 @@ def render_quote_pdf(quote: dict) -> bytes:
     pdf.set_xy(41, top)
     pdf.set_font("Helvetica", "B", 15)
     pdf.set_text_color(*_DARK)
-    pdf.cell(0, 8, _safe(cfg.company_name or "CompuJob"), ln=1)
+    company = (quote.get("companyName") or "").strip() or cfg.company_name or "CompuJob"
+    pdf.cell(0, 8, _safe(company), ln=1)
     # linhas de contato da empresa (so as preenchidas no .env)
     info = []
     if (cfg.company_address or "").strip():
@@ -124,15 +125,18 @@ def render_quote_pdf(quote: dict) -> bytes:
 
     # ---- cliente | vendedor (blocos opcionais, altura dinamica) ----------
     client = (quote.get("title") or "").strip()
-    client_addr = (quote.get("clientAddress") or "").strip()
-    client_cnpj = (quote.get("clientCnpj") or "").strip()
+    client_lines = [str(x).strip() for x in (quote.get("clientLines") or []) if str(x).strip()]
+    if not client_lines:   # fallback p/ orcamentos antigos (endereco/CNPJ fixos)
+        legacy = [quote.get("clientAddress"),
+                  ("CNPJ: " + quote["clientCnpj"]) if (quote.get("clientCnpj") or "").strip() else ""]
+        client_lines = [str(x).strip() for x in legacy if str(x).strip()]
     seller = (quote.get("seller") or "").strip()
     seller_email = (quote.get("sellerEmail") or "").strip()
-    if client or client_addr or client_cnpj or seller or seller_email:
+    if client or client_lines or seller or seller_email:
         by = pdf.get_y()
-        # coluna CLIENTE (esquerda): nome + endereco + CNPJ (so os preenchidos)
+        # coluna CLIENTE (esquerda): nome + linhas livres (so as preenchidas)
         left_y = by
-        if client or client_addr or client_cnpj:
+        if client or client_lines:
             pdf.set_xy(15, left_y)
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_text_color(*_MUTED)
@@ -146,14 +150,10 @@ def render_quote_pdf(quote: dict) -> bytes:
                 left_y += 6
             pdf.set_font("Helvetica", size=9)
             pdf.set_text_color(*_MUTED)
-            if client_addr:
+            for line in client_lines:
                 pdf.set_xy(15, left_y)
-                pdf.multi_cell(92, 4.5, _safe(client_addr))
+                pdf.multi_cell(92, 4.5, _safe(line))
                 left_y = pdf.get_y()
-            if client_cnpj:
-                pdf.set_xy(15, left_y)
-                pdf.cell(92, 4.5, _safe("CNPJ: " + client_cnpj))
-                left_y += 4.5
         # coluna VENDEDOR (direita)
         right_y = by
         if seller or seller_email:

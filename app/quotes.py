@@ -122,8 +122,8 @@ def save_quote(payload: dict) -> dict:
     """Create (no id) or update (existing id). Returns the stored quote."""
     now = int(time.time())
     title = (payload.get("title") or "").strip()
-    client_address = (payload.get("clientAddress") or "").strip()
-    client_cnpj = (payload.get("clientCnpj") or "").strip()
+    client_lines = [str(x).strip() for x in (payload.get("clientLines") or []) if str(x).strip()]
+    company_name = (payload.get("companyName") or "").strip()
     seller = (payload.get("seller") or "").strip()
     seller_email = (payload.get("sellerEmail") or "").strip()
     notes = (payload.get("notes") or "").strip()
@@ -154,8 +154,8 @@ def save_quote(payload: dict) -> dict:
             row = {"id": secrets.token_hex(6), "number": f"{seq:04d}", "createdAt": now}
             rows.append(row)
         row["title"] = title
-        row["clientAddress"] = client_address
-        row["clientCnpj"] = client_cnpj
+        row["clientLines"] = client_lines
+        row["companyName"] = company_name
         row["seller"] = seller
         row["sellerEmail"] = seller_email
         row["notes"] = notes

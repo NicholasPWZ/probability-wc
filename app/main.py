@@ -53,6 +53,7 @@ async def api_config(request: Request):
     return {
         "authed": auth.valid_session(request.cookies.get(auth.COOKIE_NAME)),
         "appConfigured": bool(get_settings().app_password),
+        "company": get_settings().company_name or "CompuJob",   # default editavel do nome da empresa
     }
 
 
