@@ -55,6 +55,18 @@
   .btn.danger:hover{background:rgba(229,85,91,.12);border-color:#7a3a3c}
   .btn.small{padding:5px 11px;min-height:31px;font-size:13px}
   .btn.tiny{padding:2px 8px;min-height:0;font-size:12px}
+  .btn.accent2{background:var(--accent2);border-color:var(--accent2);color:#fff}
+  .btn.accent2:hover{filter:brightness(1.08)}
+  /* orcamento: sub-abas (Itens/Dados), titulos de secao e barra de acao fixa */
+  .subtabs{display:inline-flex;gap:3px;background:var(--panel2);border:1px solid var(--line);padding:4px;border-radius:var(--r-sm);margin-bottom:14px}
+  .subtab{background:transparent;border:0;color:var(--muted);padding:7px 18px;border-radius:7px;cursor:pointer;font-size:13.5px;font-weight:600}
+  .subtab:hover{color:var(--text)}
+  .subtab.active{background:var(--accent);color:#fff}
+  .sec-title{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
+  .sec + .sec{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+  .actionbar{position:sticky;bottom:0;z-index:20;background:var(--panel);border:1px solid var(--line2);border-radius:var(--r);
+    padding:12px 14px;margin-top:14px;box-shadow:0 -8px 22px rgba(0,0,0,.28);display:flex;gap:8px;flex-wrap:wrap}
+  .actionbar .grow{flex:1;min-width:8px}
   .btn:disabled{opacity:.5;cursor:not-allowed}
 
   /* ===== primitives ===== */
@@ -250,6 +262,7 @@
       <nav>
         <button id="nav-search" class="active" onclick="showView('search')">Buscar</button>
         <button id="nav-cart" onclick="showView('cart')">Carrinho <span id="cart-badge" class="badge"></span></button>
+        <button id="nav-quotes" onclick="showView('quotes')">Orçamentos <span id="quotes-count" class="badge"></span></button>
         <button id="nav-suppliers" onclick="showView('suppliers')">Fornecedores</button>
       </nav>
       <button class="chip spacer" id="supstatus" onclick="showView('suppliers')" title="Status dos fornecedores" style="display:none"></button>
@@ -269,48 +282,74 @@
     </div>
 
     <div id="view-cart" class="hidden">
-      <div class="card">
-        <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
-          <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">Cliente</label>
-            <input id="cart-title" type="text" placeholder="Ex.: João da Silva" style="width:100%" onchange="saveDraft()"></div>
-          <div><label style="margin:0 0 4px;display:block">Margem padrão (%)</label>
-            <input id="cart-markup" type="number" step="1" value="30" style="width:110px" oninput="renderCart()"></div>
+      <div class="subtabs">
+        <button class="subtab active" id="ctab-itens" onclick="showCartTab('itens')">Itens</button>
+        <button class="subtab" id="ctab-dados" onclick="showCartTab('dados')">Dados &amp; opções</button>
+      </div>
+
+      <div id="cart-tab-itens">
+        <div id="cart-body"></div>
+      </div>
+
+      <div id="cart-tab-dados" class="hidden">
+        <div class="card">
+          <div class="sec">
+            <div class="sec-title">Cliente e vendedor</div>
+            <div class="row" style="gap:12px;flex-wrap:wrap;align-items:flex-end">
+              <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">Cliente</label>
+                <input id="cart-title" type="text" placeholder="Ex.: João da Silva" style="width:100%" onchange="saveDraft()"></div>
+              <div><label style="margin:0 0 4px;display:block">Margem padrão (%)</label>
+                <input id="cart-markup" type="number" step="1" value="30" style="width:120px" oninput="renderCart()"></div>
+            </div>
+            <div class="row" style="gap:12px;flex-wrap:wrap;margin-top:12px">
+              <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">Vendedor</label>
+                <input id="cart-seller" type="text" placeholder="Seu nome" style="width:100%" onchange="saveDraft()"></div>
+              <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">E-mail do vendedor</label>
+                <input id="cart-seller-email" type="email" placeholder="voce@empresa.com.br" style="width:100%" onchange="saveDraft()"></div>
+            </div>
+            <div style="margin-top:12px"><label style="margin:0 0 4px;display:block">Observações (saem no PDF)</label>
+              <input id="cart-notes" type="text" placeholder="Ex.: Válido por 7 dias. Frete não incluso." style="width:100%" onchange="saveDraft()"></div>
+          </div>
+          <div class="sec">
+            <div class="sec-title">Exibição pro cliente</div>
+            <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13.5px">
+              <input type="checkbox" id="cart-finalonly" onchange="saveDraft();toggleFinalName()" style="accent-color:var(--accent);width:16px;height:16px;flex:none">
+              Exibir apenas preço final <span class="muted">(esconde o preço unitário)</span></label>
+            <div id="finalname-row" class="hidden" style="margin-top:10px">
+              <label style="margin:0 0 4px;display:block">Nome do conjunto <span class="muted">(ex.: DESKTOP GAMER — 1 preço só + componentes sem preço; vazio = cada item com seu preço final)</span></label>
+              <div class="row" style="gap:12px;flex-wrap:wrap;align-items:flex-end">
+                <input id="cart-finalname" type="text" placeholder="Ex.: DESKTOP GAMER" style="flex:1;min-width:200px" onchange="saveDraft()">
+                <div><label style="margin:0 0 4px;display:block;font-size:12px" class="muted">Qtd do conjunto</label>
+                  <input id="cart-finalqty" type="number" min="1" step="1" value="1" style="width:120px" oninput="saveDraft();renderCart()"></div>
+              </div></div>
+            <p class="muted" style="font-size:12px;margin:12px 0 0">O PDF é a versão do cliente: mostra só produto e preço — nunca custo, margem ou fornecedor.</p>
+          </div>
         </div>
-        <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:10px">
-          <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">Vendedor</label>
-            <input id="cart-seller" type="text" placeholder="Seu nome" style="width:100%" onchange="saveDraft()"></div>
-          <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">E-mail do vendedor</label>
-            <input id="cart-seller-email" type="email" placeholder="voce@empresa.com.br" style="width:100%" onchange="saveDraft()"></div>
-        </div>
-        <div style="margin-top:10px"><label style="margin:0 0 4px;display:block">Observações (saem no PDF)</label>
-          <input id="cart-notes" type="text" placeholder="Ex.: Válido por 7 dias. Frete não incluso." style="width:100%" onchange="saveDraft()"></div>
-        <label style="display:inline-flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer;font-size:13px">
-          <input type="checkbox" id="cart-finalonly" onchange="saveDraft();toggleFinalName()" style="accent-color:var(--accent);width:16px;height:16px;flex:none">
-          Exibir apenas preço final <span class="muted">(esconde o preço unitário no PDF e no texto do cliente)</span></label>
-        <div id="finalname-row" class="hidden" style="margin-top:8px">
-          <label style="margin:0 0 4px;display:block">Nome do conjunto <span class="muted">(ex.: DESKTOP GAMER — mostra 1 preço só e lista os componentes sem preço; vazio = cada item com seu preço final)</span></label>
-          <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
-            <input id="cart-finalname" type="text" placeholder="Ex.: DESKTOP GAMER" style="flex:1;min-width:200px" onchange="saveDraft()">
-            <div><label style="margin:0 0 4px;display:block;font-size:12px" class="muted">Qtd do conjunto</label>
-              <input id="cart-finalqty" type="number" min="1" step="1" value="1" style="width:120px" oninput="saveDraft();renderCart()"></div>
-          </div></div>
-        <div id="quote-status" class="hidden" style="margin-top:12px;font-size:13px;padding:8px 10px;border-radius:var(--r-sm);background:rgba(255,255,255,.04)"></div>
-        <div class="row" style="justify-content:flex-end;gap:8px;margin-top:10px;flex-wrap:wrap">
+      </div>
+
+      <div class="actionbar" style="flex-direction:column">
+        <div id="quote-status" class="hidden" style="font-size:13px;padding:8px 10px;border-radius:var(--r-sm);background:var(--panel2);border:1px solid var(--line)"></div>
+        <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin:0">
           <button class="btn small" onclick="newQuote()">+ Novo</button>
           <button class="btn small" onclick="copyQuote()">Copiar texto</button>
           <button class="btn small danger" onclick="clearCart()">Limpar</button>
-          <button class="btn small" onclick="exportQuotePdf()">Exportar PDF</button>
+          <span class="grow"></span>
+          <button class="btn small accent2" onclick="exportQuotePdf()">Exportar PDF</button>
           <button class="btn small primary" id="btn-save-quote" onclick="saveQuote()">Salvar orçamento</button>
         </div>
-        <p class="muted" style="font-size:12.5px;margin:10px 0 0">A margem por item (se preenchida) sobrepõe a padrão. Custo e quantidade são editáveis. O rascunho fica neste navegador; ao <b>Salvar</b>, o orçamento vai pro servidor (com número) e pode ser exportado em PDF. O PDF é a versão do cliente — não mostra custo nem margem.</p>
       </div>
-      <div id="cart-body"></div>
-      <div class="card" id="quotes-panel" style="margin-top:14px">
-        <div class="row" style="justify-content:space-between;align-items:center">
+    </div>
+
+    <div id="view-quotes" class="hidden">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;flex-wrap:wrap">
           <h2 style="margin:0;font-size:16px">Orçamentos salvos</h2>
-          <button class="btn tiny" onclick="loadQuotes()">Atualizar</button>
+          <div class="row" style="gap:8px">
+            <button class="btn small" onclick="loadQuotes()">Atualizar</button>
+            <button class="btn small primary" onclick="newQuote();showView('cart')">+ Novo orçamento</button>
+          </div>
         </div>
-        <div id="quotes-list" style="margin-top:10px"></div>
+        <div id="quotes-list"></div>
       </div>
     </div>
 
@@ -423,17 +462,24 @@ async function doLogin(){
   catch(e){ $('#login-msg').textContent=e.message; }
 }
 async function doLogout(){ try{await api('/api/logout',{method:'POST'})}catch(e){} location.reload(); }
-function enterApp(){ $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); loadSuppliersMeta(); loadCart(); renderSupplierFilter(); }
+function enterApp(){ $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); loadSuppliersMeta(); loadCart(); loadQuotes(); renderSupplierFilter(); }
 
 // ---------- views ----------
 function showView(v){
-  for(const n of ['search','cart','suppliers']){
+  for(const n of ['search','cart','quotes','suppliers']){
     $('#view-'+n).classList.toggle('hidden', n!==v);
     $('#nav-'+n).classList.toggle('active', n===v);
   }
   if(v==='search') renderSupplierFilter();
   if(v==='suppliers') renderSuppliers();
-  if(v==='cart'){ renderCart(); loadQuotes(); }
+  if(v==='cart'){ renderCart(); updateQuoteStatus(); }
+  if(v==='quotes') loadQuotes();
+}
+function showCartTab(t){
+  $('#cart-tab-itens').classList.toggle('hidden', t!=='itens');
+  $('#cart-tab-dados').classList.toggle('hidden', t!=='dados');
+  $('#ctab-itens').classList.toggle('active', t==='itens');
+  $('#ctab-dados').classList.toggle('active', t==='dados');
 }
 
 // ---------- suppliers ----------
@@ -860,7 +906,7 @@ function newQuote(){
   CART=[]; EDITING_ID=null; EDITING_NUMBER=null;
   ['#cart-title','#cart-notes','#cart-finalname'].forEach(s=>{ if($(s)) $(s).value=''; });
   if($('#cart-finalqty')) $('#cart-finalqty').value='1';
-  saveCart(); saveDraft(); renderCart(); updateQuoteStatus(); loadQuotes(); showToast('Novo orçamento');
+  saveCart(); saveDraft(); renderCart(); updateQuoteStatus(); showCartTab('itens'); loadQuotes(); showToast('Novo orçamento');
 }
 function saveCart(){ localStorage.setItem('compubot_cart', JSON.stringify(CART));
   if($('#cart-markup')) localStorage.setItem('compubot_markup', $('#cart-markup').value); updateCartBadge(); }
@@ -1000,6 +1046,7 @@ async function loadQuotes(){
   const box=$('#quotes-list'); if(!box) return;
   try{
     const r=await fetch('/api/quotes'); const L=(await r.json()).quotes||[];
+    const badge=$('#quotes-count'); if(badge){ badge.textContent=L.length; badge.classList.toggle('show', L.length>0); }
     if(!L.length){ box.innerHTML='<p class="muted" style="font-size:13px;margin:0">Nenhum orçamento salvo ainda. Monte o carrinho e clique em <b>Salvar orçamento</b>.</p>'; return; }
     box.innerHTML='<div class="scroll"><table class="rwd"><tr class="hr"><th>Nº</th><th>Cliente</th><th class="p">Itens</th><th class="p">Total</th><th></th></tr>'+
       L.map(q=>`<tr${q.id===EDITING_ID?' style="outline:2px solid var(--accent2);outline-offset:-2px"':''}>
@@ -1029,6 +1076,7 @@ async function openQuote(id){
     toggleFinalName();
     if($('#cart-markup')) $('#cart-markup').value=(q.markup!=null?q.markup:30);
     saveCart(); saveDraft(); renderCart(); updateQuoteStatus(); loadQuotes();
+    showView('cart'); showCartTab('itens');
     showToast('Orçamento #'+q.number+' aberto para edição');
   }catch(e){ showToast('Não consegui abrir o orçamento','err'); }
 }
