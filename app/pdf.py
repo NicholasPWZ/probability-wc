@@ -15,6 +15,7 @@ from pathlib import Path
 from fpdf import FPDF
 
 from app import quotes
+from app.config import get_settings
 
 _LOGO = Path(__file__).parent / "static" / "compujob-logo.png"
 
@@ -70,7 +71,9 @@ def render_quote_pdf(quote: dict) -> bytes:
     pdf.set_margins(15, 14, 15)
     pdf.add_page()
 
-    # ---- header: logo + title/number/date --------------------------------
+    cfg = get_settings()
+
+    # ---- header: logo + empresa (esq) | ORCAMENTO/No/data (dir) -----------
     top = pdf.get_y()
     if _LOGO.exists():
         try:
@@ -80,11 +83,26 @@ def render_quote_pdf(quote: dict) -> bytes:
     pdf.set_xy(35, top)
     pdf.set_font("Helvetica", "B", 15)
     pdf.set_text_color(*_DARK)
-    pdf.cell(0, 8, "CompuJob", ln=1)
-    pdf.set_x(35)
-    pdf.set_font("Helvetica", size=9)
+    pdf.cell(0, 8, _safe(cfg.company_name or "CompuJob"), ln=1)
+    # linhas de contato da empresa (so as preenchidas no .env)
+    info = []
+    if (cfg.company_address or "").strip():
+        info.append(cfg.company_address.strip())
+    phones = " - ".join(x for x in [
+        ("Tel: " + cfg.company_phone.strip()) if (cfg.company_phone or "").strip() else "",
+        ("Cel: " + cfg.company_mobile.strip()) if (cfg.company_mobile or "").strip() else "",
+    ] if x)
+    if phones:
+        info.append(phones)
+    if (cfg.company_cnpj or "").strip():
+        info.append("CNPJ: " + cfg.company_cnpj.strip())
+    pdf.set_font("Helvetica", size=8.5)
     pdf.set_text_color(*_MUTED)
-    pdf.cell(0, 5, _safe("Comparador e orçamentos"))
+    iy = top + 8.5
+    for line in info:
+        pdf.set_xy(35, iy)
+        pdf.cell(80, 4, _safe(line))
+        iy += 4
 
     pdf.set_xy(120, top)
     pdf.set_font("Helvetica", "B", 16)
@@ -98,21 +116,45 @@ def render_quote_pdf(quote: dict) -> bytes:
     pdf.set_text_color(*_MUTED)
     pdf.cell(75, 5, _safe("Data: " + _date(quote.get("updatedAt") or quote.get("createdAt"))), align="R", ln=1)
 
-    pdf.set_y(top + 20)
+    div_y = max(top + 20, iy + 1)
+    pdf.set_y(div_y)
     pdf.set_draw_color(*_LINE)
-    pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+    pdf.line(15, div_y, 195, div_y)
     pdf.ln(4)
 
-    # ---- client ----------------------------------------------------------
-    title = (quote.get("title") or "").strip()
-    if title:
-        pdf.set_font("Helvetica", size=10)
-        pdf.set_text_color(*_MUTED)
-        pdf.cell(16, 6, _safe("Cliente:"))
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.set_text_color(*_DARK)
-        pdf.cell(0, 6, _safe(title), ln=1)
-        pdf.ln(2)
+    # ---- cliente | vendedor (blocos opcionais) ---------------------------
+    client = (quote.get("title") or "").strip()
+    seller = (quote.get("seller") or "").strip()
+    seller_email = (quote.get("sellerEmail") or "").strip()
+    if client or seller or seller_email:
+        by = pdf.get_y()
+        if client:
+            pdf.set_xy(15, by)
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_text_color(*_MUTED)
+            pdf.cell(90, 4, _safe("CLIENTE"))
+            pdf.set_xy(15, by + 4.5)
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_text_color(*_DARK)
+            pdf.cell(90, 6, _safe(client))
+        if seller or seller_email:
+            pdf.set_xy(110, by)
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_text_color(*_MUTED)
+            pdf.cell(85, 4, _safe("VENDEDOR"))
+            yy = by + 4.5
+            if seller:
+                pdf.set_xy(110, yy)
+                pdf.set_font("Helvetica", "B", 10.5)
+                pdf.set_text_color(*_DARK)
+                pdf.cell(85, 5.5, _safe(seller))
+                yy += 5.5
+            if seller_email:
+                pdf.set_xy(110, yy)
+                pdf.set_font("Helvetica", size=9)
+                pdf.set_text_color(*_MUTED)
+                pdf.cell(85, 5, _safe(seller_email))
+        pdf.set_y(by + 16)
 
     # ---- items table -----------------------------------------------------
     widths = (95, 20, 32, 33)

@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     autologin_enabled: bool = True  # when a session expires, try to re-login via Camoufox
     autologin_headless: str = ""    # "" = auto ("virtual" on Linux/Xvfb, True elsewhere)
 
+    # dados da empresa vendedora que saem no PDF do orcamento (todos opcionais; vazio = nao aparece).
+    # Fixos aqui no .env; nome do cliente/vendedor/e-mail sao editados por orcamento na tela.
+    company_name: str = "CompuJob"  # razao/nome exibido no cabecalho (fallback: CompuJob)
+    company_cnpj: str = ""
+    company_address: str = ""
+    company_phone: str = ""         # telefone fixo
+    company_mobile: str = ""        # celular
+
 
 @lru_cache
 def get_settings() -> Settings:

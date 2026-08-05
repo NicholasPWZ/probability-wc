@@ -270,10 +270,16 @@
     <div id="view-cart" class="hidden">
       <div class="card">
         <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
-          <div style="flex:1;min-width:220px"><label style="margin:0 0 4px;display:block">Cliente / título</label>
+          <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">Cliente</label>
             <input id="cart-title" type="text" placeholder="Ex.: João da Silva" style="width:100%" onchange="saveDraft()"></div>
           <div><label style="margin:0 0 4px;display:block">Margem padrão (%)</label>
             <input id="cart-markup" type="number" step="1" value="30" style="width:110px" oninput="renderCart()"></div>
+        </div>
+        <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:10px">
+          <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">Vendedor</label>
+            <input id="cart-seller" type="text" placeholder="Seu nome" style="width:100%" onchange="saveDraft()"></div>
+          <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">E-mail do vendedor</label>
+            <input id="cart-seller-email" type="email" placeholder="voce@empresa.com.br" style="width:100%" onchange="saveDraft()"></div>
         </div>
         <div style="margin-top:10px"><label style="margin:0 0 4px;display:block">Observações (saem no PDF)</label>
           <input id="cart-notes" type="text" placeholder="Ex.: Válido por 7 dias. Frete não incluso." style="width:100%" onchange="saveDraft()"></div>
@@ -811,12 +817,16 @@ let EDITING_ID = null;   // id do orcamento salvo em edicao (null = novo ao Salv
 function loadCart(){ try{ CART = JSON.parse(localStorage.getItem('compubot_cart')||'[]'); }catch(e){ CART=[]; }
   const gm = localStorage.getItem('compubot_markup'); if(gm && $('#cart-markup')) $('#cart-markup').value = gm;
   if($('#cart-title')) $('#cart-title').value = localStorage.getItem('compubot_qtitle')||'';
+  if($('#cart-seller')) $('#cart-seller').value = localStorage.getItem('compubot_qseller')||'';
+  if($('#cart-seller-email')) $('#cart-seller-email').value = localStorage.getItem('compubot_qsemail')||'';
   if($('#cart-notes')) $('#cart-notes').value = localStorage.getItem('compubot_qnotes')||'';
   EDITING_ID = localStorage.getItem('compubot_qid')||null;
   updateCartBadge(); }
 function saveCart(){ localStorage.setItem('compubot_cart', JSON.stringify(CART));
   if($('#cart-markup')) localStorage.setItem('compubot_markup', $('#cart-markup').value); updateCartBadge(); }
 function saveDraft(){ localStorage.setItem('compubot_qtitle', ($('#cart-title')||{}).value||'');
+  localStorage.setItem('compubot_qseller', ($('#cart-seller')||{}).value||'');
+  localStorage.setItem('compubot_qsemail', ($('#cart-seller-email')||{}).value||'');
   localStorage.setItem('compubot_qnotes', ($('#cart-notes')||{}).value||'');
   localStorage.setItem('compubot_qid', EDITING_ID||''); }
 function updateCartBadge(){ const b=$('#cart-badge'); if(!b) return; const n=CART.reduce((s,i)=>s+(i.qty||1),0);
@@ -847,7 +857,7 @@ function updateCart(id, field, value){ const it=CART.find(x=>x.id===id); if(!it)
   saveCart(); renderCart(); }
 function removeCart(id){ CART=CART.filter(x=>x.id!==id); saveCart(); renderCart(); }
 function clearCart(){ if(CART.length && !confirm('Limpar o carrinho?')) return; CART=[]; EDITING_ID=null;
-  if($('#cart-title')) $('#cart-title').value=''; if($('#cart-notes')) $('#cart-notes').value='';
+  ['#cart-title','#cart-notes'].forEach(s=>{ if($(s)) $(s).value=''; });   // vendedor/e-mail ficam (reaproveitados)
   saveCart(); saveDraft(); renderCart(); loadQuotes(); }
 
 function renderCart(){
@@ -904,8 +914,9 @@ function copyQuote(){
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmtDate(ts){ if(!ts) return ''; try{ return new Date(ts*1000).toLocaleDateString('pt-BR'); }catch(e){ return ''; } }
 function quotePayload(){
-  return { id: EDITING_ID||null, title: ($('#cart-title')||{}).value||'', notes: ($('#cart-notes')||{}).value||'',
-    markup: globalMarkup(),
+  return { id: EDITING_ID||null, title: ($('#cart-title')||{}).value||'',
+    seller: ($('#cart-seller')||{}).value||'', sellerEmail: ($('#cart-seller-email')||{}).value||'',
+    notes: ($('#cart-notes')||{}).value||'', markup: globalMarkup(),
     items: CART.map(it=>({ name:it.name, supplier:it.supplier, url:it.url,
                            cost:it.cost, qty:it.qty||1, markup:it.markup, cprice:it.cprice })) };
 }
@@ -948,6 +959,8 @@ async function openQuote(id){
       cost:(it.cost!=null?it.cost:''), qty:it.qty||1, markup:(it.markup==null?'':it.markup), cprice:(it.cprice==null?'':it.cprice) }));
     EDITING_ID=q.id;
     if($('#cart-title')) $('#cart-title').value=q.title||'';
+    if($('#cart-seller')) $('#cart-seller').value=q.seller||'';
+    if($('#cart-seller-email')) $('#cart-seller-email').value=q.sellerEmail||'';
     if($('#cart-notes')) $('#cart-notes').value=q.notes||'';
     if($('#cart-markup')) $('#cart-markup').value=(q.markup!=null?q.markup:30);
     saveCart(); saveDraft(); renderCart(); loadQuotes();

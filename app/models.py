@@ -42,7 +42,9 @@ class QuoteRequest(BaseModel):
     """Save/update a quote (orcamento). Items are permissive dicts: cost/markup may be a
     number or "" (empty = use the global markup); the store coerces/normalizes them."""
     id: str | None = None          # present = update; absent = create (gets a new number)
-    title: str = ""                # client / quote title
+    title: str = ""                # nome do cliente
+    seller: str = ""               # nome do vendedor
+    sellerEmail: str = ""          # e-mail corporativo do vendedor
     notes: str = ""                # observacoes (printed on the PDF)
     markup: float = 0              # global margin %
     items: list[dict] = []

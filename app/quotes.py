@@ -115,6 +115,8 @@ def save_quote(payload: dict) -> dict:
     """Create (no id) or update (existing id). Returns the stored quote."""
     now = int(time.time())
     title = (payload.get("title") or "").strip()
+    seller = (payload.get("seller") or "").strip()
+    seller_email = (payload.get("sellerEmail") or "").strip()
     notes = (payload.get("notes") or "").strip()
     markup = _num(payload.get("markup")) or 0.0
     items = []
@@ -139,6 +141,8 @@ def save_quote(payload: dict) -> dict:
             row = {"id": secrets.token_hex(6), "number": f"{seq:04d}", "createdAt": now}
             rows.append(row)
         row["title"] = title
+        row["seller"] = seller
+        row["sellerEmail"] = seller_email
         row["notes"] = notes
         row["markup"] = markup
         row["items"] = items
