@@ -49,4 +49,5 @@ class QuoteRequest(BaseModel):
     markup: float = 0              # global margin %
     finalOnly: bool = False        # PDF/texto do cliente: esconder preco unitario, so o preco final
     finalName: str = ""            # nome do conjunto (modo KIT: 1 preco + componentes sem preco)
+    finalQty: int = 1              # quantidade do conjunto (KIT vira produto com sua propria qtd)
     items: list[dict] = []

@@ -289,7 +289,11 @@
           Exibir apenas preço final <span class="muted">(esconde o preço unitário no PDF e no texto do cliente)</span></label>
         <div id="finalname-row" class="hidden" style="margin-top:8px">
           <label style="margin:0 0 4px;display:block">Nome do conjunto <span class="muted">(ex.: DESKTOP GAMER — mostra 1 preço só e lista os componentes sem preço; vazio = cada item com seu preço final)</span></label>
-          <input id="cart-finalname" type="text" placeholder="Ex.: DESKTOP GAMER" style="width:100%" onchange="saveDraft()"></div>
+          <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <input id="cart-finalname" type="text" placeholder="Ex.: DESKTOP GAMER" style="flex:1;min-width:200px" onchange="saveDraft()">
+            <div><label style="margin:0 0 4px;display:block;font-size:12px" class="muted">Qtd do conjunto</label>
+              <input id="cart-finalqty" type="number" min="1" step="1" value="1" style="width:120px" oninput="saveDraft();renderCart()"></div>
+          </div></div>
         <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap">
           <button class="btn small" onclick="copyQuote()">Copiar texto</button>
           <button class="btn small danger" onclick="clearCart()">Limpar</button>
@@ -829,6 +833,7 @@ function loadCart(){ try{ CART = JSON.parse(localStorage.getItem('compubot_cart'
   if($('#cart-notes')) $('#cart-notes').value = localStorage.getItem('compubot_qnotes')||'';
   if($('#cart-finalonly')) $('#cart-finalonly').checked = localStorage.getItem('compubot_qfinal')==='1';
   if($('#cart-finalname')) $('#cart-finalname').value = localStorage.getItem('compubot_qfinalname')||'';
+  if($('#cart-finalqty')) $('#cart-finalqty').value = localStorage.getItem('compubot_qfinalqty')||'1';
   toggleFinalName();
   EDITING_ID = localStorage.getItem('compubot_qid')||null;
   updateCartBadge(); }
@@ -841,6 +846,7 @@ function saveDraft(){ localStorage.setItem('compubot_qtitle', ($('#cart-title')|
   localStorage.setItem('compubot_qnotes', ($('#cart-notes')||{}).value||'');
   localStorage.setItem('compubot_qfinal', (($('#cart-finalonly')||{}).checked)?'1':'0');
   localStorage.setItem('compubot_qfinalname', ($('#cart-finalname')||{}).value||'');
+  localStorage.setItem('compubot_qfinalqty', ($('#cart-finalqty')||{}).value||'1');
   localStorage.setItem('compubot_qid', EDITING_ID||''); }
 function updateCartBadge(){ const b=$('#cart-badge'); if(!b) return; const n=CART.reduce((s,i)=>s+(i.qty||1),0);
   b.textContent=n; b.classList.toggle('show', n>0); }
@@ -892,14 +898,19 @@ function renderCart(){
       <td class="p"><button class="btn small danger" onclick="removeCart('${it.id}')">x</button></td>
     </tr>`;
   }).join('');
-  const profit = totClient-totCost;
+  // modo KIT: o conjunto vira produto com quantidade -> multiplica os totais
+  const kitName = (($('#cart-finalonly')||{}).checked) ? (($('#cart-finalname')||{}).value||'').trim() : '';
+  const kitMult = kitName ? Math.max(1, parseInt(($('#cart-finalqty')||{}).value)||1) : 1;
+  const gCost=totCost*kitMult, gClient=totClient*kitMult, gProfit=(totClient-totCost)*kitMult;
+  const kitNote = (kitName && kitMult>1)
+    ? `<div class="muted" style="text-align:center;margin-bottom:8px;font-size:12.5px">Conjunto <b>${esc(kitName)}</b>: ${kitMult} × ${brl(totClient)} = <b>${brl(gClient)}</b></div>` : '';
   box.innerHTML = '<div class="scroll"><table class="rwd"><tr class="hr">'+
     '<th>Produto</th><th class="p">Custo un.</th><th class="p">Qtd</th><th class="p">Margem %</th><th class="p">Preço cliente</th><th class="p">Subtotal</th><th></th></tr>'+
     rows+'</table></div>'+
-    `<div class="card" style="margin-top:12px"><div class="row" style="justify-content:space-around;text-align:center">
-      <div><div class="muted">Custo total</div><div style="font-size:16px;font-weight:600">${brl(totCost)}</div></div>
-      <div><div class="muted">Total ao cliente</div><div class="tot">${brl(totClient)}</div></div>
-      <div><div class="muted">Lucro</div><div style="font-size:16px;font-weight:600;color:var(--accent2)">${brl(profit)}</div></div>
+    `<div class="card" style="margin-top:12px">${kitNote}<div class="row" style="justify-content:space-around;text-align:center">
+      <div><div class="muted">Custo total</div><div style="font-size:16px;font-weight:600">${brl(gCost)}</div></div>
+      <div><div class="muted">Total ao cliente</div><div class="tot">${brl(gClient)}</div></div>
+      <div><div class="muted">Lucro</div><div style="font-size:16px;font-weight:600;color:var(--accent2)">${brl(gProfit)}</div></div>
     </div></div>`;
 }
 let _toastTimer=null;
@@ -921,8 +932,12 @@ function copyQuote(){
     if(finalName) rows.push(`• ${qty>1?qty+'x ':''}${nm}`);                          // kit: componente sem preco
     else if(finalOnly) rows.push(`• ${nm}${qty>1?` (${qty}x)`:''} — ${brl(sub)}`);   // so o preco final
     else rows.push(`• ${nm} — ${qty}x ${brl(cu)} = ${brl(sub)}`); }                  // completo
-  const lines = finalName ? [`*${finalName} — ${brl(tot)}*`,'','Itens inclusos:',...rows]
-                          : ['*Orçamento*','',...rows,'',`*Total: ${brl(tot)}*`];
+  let lines;
+  if(finalName){
+    const kq=Math.max(1, parseInt(($('#cart-finalqty')||{}).value)||1), grand=tot*kq;
+    const head = kq>1 ? `*${finalName} — ${kq}x ${brl(tot)} = ${brl(grand)}*` : `*${finalName} — ${brl(tot)}*`;
+    lines=[head,'','Itens inclusos:',...rows];
+  } else lines=['*Orçamento*','',...rows,'',`*Total: ${brl(tot)}*`];
   const text=lines.join('\n');
   navigator.clipboard.writeText(text).then(
     ()=>showToast('Orçamento copiado ✓'),
@@ -937,6 +952,7 @@ function quotePayload(){
     seller: ($('#cart-seller')||{}).value||'', sellerEmail: ($('#cart-seller-email')||{}).value||'',
     notes: ($('#cart-notes')||{}).value||'', markup: globalMarkup(),
     finalOnly: !!(($('#cart-finalonly')||{}).checked), finalName: ($('#cart-finalname')||{}).value||'',
+    finalQty: Math.max(1, parseInt(($('#cart-finalqty')||{}).value)||1),
     items: CART.map(it=>({ name:it.name, dname:it.dname, supplier:it.supplier, url:it.url,
                            cost:it.cost, qty:it.qty||1, markup:it.markup, cprice:it.cprice })) };
 }
@@ -984,6 +1000,7 @@ async function openQuote(id){
     if($('#cart-notes')) $('#cart-notes').value=q.notes||'';
     if($('#cart-finalonly')) $('#cart-finalonly').checked=!!q.finalOnly;
     if($('#cart-finalname')) $('#cart-finalname').value=q.finalName||'';
+    if($('#cart-finalqty')) $('#cart-finalqty').value=(q.finalQty||1);
     toggleFinalName();
     if($('#cart-markup')) $('#cart-markup').value=(q.markup!=null?q.markup:30);
     saveCart(); saveDraft(); renderCart(); loadQuotes();

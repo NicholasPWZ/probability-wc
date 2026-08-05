@@ -163,13 +163,19 @@ def render_quote_pdf(quote: dict) -> bytes:
     final_name = (quote.get("finalName") or "").strip() if final_only else ""
 
     if final_name:
+        kit_qty = gm["kitQty"]
         yb = pdf.get_y()
         pdf.set_fill_color(*_HEAD_BG)
         pdf.rect(15, yb, 180, 13, style="F")
-        pdf.set_xy(18, yb + 3)
+        pdf.set_xy(18, yb + (2.5 if kit_qty > 1 else 3))
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*_DARK)
         pdf.cell(115, 7, _safe(final_name))
+        if kit_qty > 1:   # o conjunto virou produto: mostra qtd x preco unitario
+            pdf.set_xy(18, yb + 8.3)
+            pdf.set_font("Helvetica", size=8.5)
+            pdf.set_text_color(*_MUTED)
+            pdf.cell(100, 4, _safe(f"{kit_qty} x {_brl(gm['unit'])}"))
         pdf.set_xy(115, yb + 2.5)
         pdf.set_font("Helvetica", "B", 15)
         pdf.set_text_color(*_ACCENT)

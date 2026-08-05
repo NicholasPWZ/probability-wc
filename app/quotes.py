@@ -69,22 +69,29 @@ def client_unit(item: dict, global_markup: float):
 
 
 def totals(quote: dict) -> dict:
-    """Client total + reseller cost/profit (profit is internal, for the list view)."""
+    """Client total + reseller cost/profit (profit is internal, for the list view).
+    In KIT mode (finalOnly + finalName) the conjunto is a product with its own quantity
+    (`finalQty`): `unit` = price of one kit (sum of components), `total` = unit * kit qty."""
     gm = _num(quote.get("markup")) or 0.0
-    tot_client = 0.0
-    tot_cost = 0.0
+    unit_client = 0.0   # preco de UM conjunto (soma dos componentes)
+    unit_cost = 0.0
     n = 0
     for it in quote.get("items", []):
         qty = int(_num(it.get("qty")) or 1)
         cu = client_unit(it, gm)
         c = _num(it.get("cost"))
         if cu is not None:
-            tot_client += cu * qty
+            unit_client += cu * qty
         if c is not None:
-            tot_cost += c * qty
+            unit_cost += c * qty
         n += qty
-    return {"total": round(tot_client, 2), "cost": round(tot_cost, 2),
-            "profit": round(tot_client - tot_cost, 2), "units": n}
+    is_kit = bool(quote.get("finalOnly") and (quote.get("finalName") or "").strip())
+    kit_qty = max(1, int(_num(quote.get("finalQty")) or 1)) if is_kit else 1
+    return {"unit": round(unit_client, 2), "kitQty": kit_qty,
+            "total": round(unit_client * kit_qty, 2),
+            "cost": round(unit_cost * kit_qty, 2),
+            "profit": round((unit_client - unit_cost) * kit_qty, 2),
+            "units": n * kit_qty}
 
 
 # --- public API -------------------------------------------------------------
@@ -121,6 +128,7 @@ def save_quote(payload: dict) -> dict:
     markup = _num(payload.get("markup")) or 0.0
     final_only = bool(payload.get("finalOnly"))
     final_name = (payload.get("finalName") or "").strip()
+    final_qty = max(1, int(_num(payload.get("finalQty")) or 1))
     items = []
     for it in (payload.get("items") or []):
         items.append({
@@ -150,6 +158,7 @@ def save_quote(payload: dict) -> dict:
         row["markup"] = markup
         row["finalOnly"] = final_only
         row["finalName"] = final_name
+        row["finalQty"] = final_qty
         row["items"] = items
         row["updatedAt"] = now
         _save(data)
