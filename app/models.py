@@ -47,4 +47,6 @@ class QuoteRequest(BaseModel):
     sellerEmail: str = ""          # e-mail corporativo do vendedor
     notes: str = ""                # observacoes (printed on the PDF)
     markup: float = 0              # global margin %
+    finalOnly: bool = False        # PDF/texto do cliente: esconder preco unitario, so o preco final
+    finalName: str = ""            # nome do conjunto (modo KIT: 1 preco + componentes sem preco)
     items: list[dict] = []

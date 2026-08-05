@@ -156,68 +156,103 @@ def render_quote_pdf(quote: dict) -> bytes:
                 pdf.cell(85, 5, _safe(seller_email))
         pdf.set_y(by + 16)
 
-    # ---- items table -----------------------------------------------------
-    widths = (95, 20, 32, 33)
-    heads = ("Produto", "Qtd", "Preço unit.", "Subtotal")
-    aligns = ("L", "C", "R", "R")
-    pdf.set_font("Helvetica", "B", 9.5)
-    pdf.set_fill_color(*_HEAD_BG)
-    pdf.set_text_color(*_DARK)
-    pdf.set_draw_color(*_LINE)
-    for w, h, a in zip(widths, heads, aligns):
-        pdf.cell(w, 8, h, border="B", align=a, fill=True)
-    pdf.ln(8)
+    # ---- itens ----------------------------------------------------------
+    # "exibir apenas preco final" esconde o preco unitario. Com um "nome do conjunto" (final_name)
+    # vira modo KIT: uma linha "NOME -> R$ total" e os componentes listados SEM preco.
+    final_only = bool(quote.get("finalOnly"))
+    final_name = (quote.get("finalName") or "").strip() if final_only else ""
 
-    pdf.set_font("Helvetica", size=9.5)
-    zebra = False
-    for it in quote.get("items", []):
-        qty = int(it.get("qty") or 1)
-        cu = quotes.client_unit(it, quotes._num(quote.get("markup")) or 0.0)
-        sub = round(cu * qty, 2) if cu is not None else None
-        # nome que o CLIENTE ve: override do vendedor (dname) OU o nome original.
-        # O fornecedor NAO aparece no PDF (vai direto pro cliente).
-        name = _safe((it.get("dname") or "").strip() or it.get("name") or "(sem nome)")
-
-        # measure wrapped product name to size the row height
-        x0, y0 = pdf.get_x(), pdf.get_y()
-        line_h = 5
-        lines = pdf.multi_cell(widths[0], line_h, name, dry_run=True, output="LINES")
-        n_name = max(1, len(lines))
-        row_h = max(9, n_name * line_h + 2)
-
-        if y0 + row_h > pdf.page_break_trigger:
-            pdf.add_page()
-            y0 = pdf.get_y()
-            x0 = pdf.get_x()
-
-        fill = _ZEBRA if zebra else (255, 255, 255)
-        pdf.set_fill_color(*fill)
-        # background block for the whole row
-        pdf.rect(x0, y0, sum(widths), row_h, style="F")
-        # product name (+ supplier muted)
-        pdf.set_xy(x0, y0 + 1)
+    if final_name:
+        yb = pdf.get_y()
+        pdf.set_fill_color(*_HEAD_BG)
+        pdf.rect(15, yb, 180, 13, style="F")
+        pdf.set_xy(18, yb + 3)
+        pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*_DARK)
-        pdf.multi_cell(widths[0], line_h, name, align="L")
-        # numeric columns, vertically centered-ish
+        pdf.cell(115, 7, _safe(final_name))
+        pdf.set_xy(115, yb + 2.5)
+        pdf.set_font("Helvetica", "B", 15)
+        pdf.set_text_color(*_ACCENT)
+        pdf.cell(77, 8, _brl(gm["total"]), align="R")
+        pdf.set_xy(15, yb + 16)
+        pdf.set_font("Helvetica", "B", 8.5)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(0, 5, _safe("ITENS INCLUSOS"), ln=1)
+        pdf.set_font("Helvetica", size=10)
         pdf.set_text_color(*_DARK)
-        cy = y0 + (row_h - line_h) / 2
-        pdf.set_xy(x0 + widths[0], cy)
-        pdf.cell(widths[1], line_h, str(qty), align="C")
-        pdf.cell(widths[2], line_h, _brl(cu), align="R")
-        pdf.cell(widths[3], line_h, _brl(sub), align="R")
-        # bottom divider
+        for it in quote.get("items", []):
+            qty = int(it.get("qty") or 1)
+            nm = (it.get("dname") or "").strip() or it.get("name") or "(sem nome)"
+            prefix = f"{qty}x " if qty > 1 else ""
+            pdf.set_x(17)
+            pdf.multi_cell(178, 5.5, _safe("-  " + prefix + nm))
+        pdf.ln(1)
+    else:
+        if final_only:
+            widths = (120, 25, 35)
+            heads = ("Produto", "Qtd", "Preço")
+            aligns = ("L", "C", "R")
+        else:
+            widths = (95, 20, 32, 33)
+            heads = ("Produto", "Qtd", "Preço unit.", "Subtotal")
+            aligns = ("L", "C", "R", "R")
+        pdf.set_font("Helvetica", "B", 9.5)
+        pdf.set_fill_color(*_HEAD_BG)
+        pdf.set_text_color(*_DARK)
         pdf.set_draw_color(*_LINE)
-        pdf.line(x0, y0 + row_h, x0 + sum(widths), y0 + row_h)
-        pdf.set_xy(x0, y0 + row_h)
-        zebra = not zebra
+        for w, h, a in zip(widths, heads, aligns):
+            pdf.cell(w, 8, h, border="B", align=a, fill=True)
+        pdf.ln(8)
 
-    # ---- total -----------------------------------------------------------
-    pdf.ln(3)
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.set_text_color(*_DARK)
-    pdf.cell(sum(widths[:2]) + widths[2], 10, "TOTAL", align="R")
-    pdf.set_text_color(*_ACCENT)
-    pdf.cell(widths[3], 10, _brl(gm["total"]), align="R", ln=1)
+        pdf.set_font("Helvetica", size=9.5)
+        zebra = False
+        for it in quote.get("items", []):
+            qty = int(it.get("qty") or 1)
+            cu = quotes.client_unit(it, quotes._num(quote.get("markup")) or 0.0)
+            sub = round(cu * qty, 2) if cu is not None else None
+            # nome que o CLIENTE ve: override do vendedor (dname) OU o nome original.
+            # O fornecedor NAO aparece no PDF (vai direto pro cliente).
+            name = _safe((it.get("dname") or "").strip() or it.get("name") or "(sem nome)")
+
+            # measure wrapped product name to size the row height
+            x0, y0 = pdf.get_x(), pdf.get_y()
+            line_h = 5
+            lines = pdf.multi_cell(widths[0], line_h, name, dry_run=True, output="LINES")
+            n_name = max(1, len(lines))
+            row_h = max(9, n_name * line_h + 2)
+
+            if y0 + row_h > pdf.page_break_trigger:
+                pdf.add_page()
+                y0 = pdf.get_y()
+                x0 = pdf.get_x()
+
+            fill = _ZEBRA if zebra else (255, 255, 255)
+            pdf.set_fill_color(*fill)
+            pdf.rect(x0, y0, sum(widths), row_h, style="F")
+            pdf.set_xy(x0, y0 + 1)
+            pdf.set_text_color(*_DARK)
+            pdf.multi_cell(widths[0], line_h, name, align="L")
+            pdf.set_text_color(*_DARK)
+            cy = y0 + (row_h - line_h) / 2
+            pdf.set_xy(x0 + widths[0], cy)
+            pdf.cell(widths[1], line_h, str(qty), align="C")
+            if final_only:
+                pdf.cell(widths[2], line_h, _brl(sub), align="R")   # so o preco final da linha
+            else:
+                pdf.cell(widths[2], line_h, _brl(cu), align="R")
+                pdf.cell(widths[3], line_h, _brl(sub), align="R")
+            pdf.set_draw_color(*_LINE)
+            pdf.line(x0, y0 + row_h, x0 + sum(widths), y0 + row_h)
+            pdf.set_xy(x0, y0 + row_h)
+            zebra = not zebra
+
+        # ---- total ------------------------------------------------------
+        pdf.ln(3)
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.set_text_color(*_DARK)
+        pdf.cell(sum(widths[:-1]), 10, "TOTAL", align="R")
+        pdf.set_text_color(*_ACCENT)
+        pdf.cell(widths[-1], 10, _brl(gm["total"]), align="R", ln=1)
 
     # ---- notes -----------------------------------------------------------
     notes = (quote.get("notes") or "").strip()

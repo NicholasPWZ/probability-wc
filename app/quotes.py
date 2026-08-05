@@ -119,6 +119,8 @@ def save_quote(payload: dict) -> dict:
     seller_email = (payload.get("sellerEmail") or "").strip()
     notes = (payload.get("notes") or "").strip()
     markup = _num(payload.get("markup")) or 0.0
+    final_only = bool(payload.get("finalOnly"))
+    final_name = (payload.get("finalName") or "").strip()
     items = []
     for it in (payload.get("items") or []):
         items.append({
@@ -146,6 +148,8 @@ def save_quote(payload: dict) -> dict:
         row["sellerEmail"] = seller_email
         row["notes"] = notes
         row["markup"] = markup
+        row["finalOnly"] = final_only
+        row["finalName"] = final_name
         row["items"] = items
         row["updatedAt"] = now
         _save(data)
