@@ -65,6 +65,9 @@
   .row.between{justify-content:space-between}
   .hidden{display:none}
   .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* preco ao cliente fixado manualmente (override da margem) */
+  input.cp{width:96px}
+  input.cp.ovr{outline:2px solid var(--accent2);outline-offset:-2px;font-weight:600}
   .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);
     border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
   @keyframes s{to{transform:rotate(360deg)}}
@@ -266,17 +269,30 @@
 
     <div id="view-cart" class="hidden">
       <div class="card">
-        <div class="row" style="justify-content:space-between;gap:12px">
-          <div class="row"><label style="margin:0">Margem padrão (%)</label>
-            <input id="cart-markup" type="number" step="1" value="30" style="width:90px" oninput="renderCart()"></div>
-          <div class="row">
-            <button class="btn small" onclick="copyQuote()">Copiar orçamento</button>
-            <button class="btn small danger" onclick="clearCart()">Limpar carrinho</button>
-          </div>
+        <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:220px"><label style="margin:0 0 4px;display:block">Cliente / título</label>
+            <input id="cart-title" type="text" placeholder="Ex.: João da Silva" style="width:100%" onchange="saveDraft()"></div>
+          <div><label style="margin:0 0 4px;display:block">Margem padrão (%)</label>
+            <input id="cart-markup" type="number" step="1" value="30" style="width:110px" oninput="renderCart()"></div>
         </div>
-        <p class="muted" style="font-size:12.5px;margin:8px 0 0">Adicione produtos pela busca. A margem por item (se preenchida) sobrepõe a padrão. Custo e quantidade são editáveis. Salvo neste navegador.</p>
+        <div style="margin-top:10px"><label style="margin:0 0 4px;display:block">Observações (saem no PDF)</label>
+          <input id="cart-notes" type="text" placeholder="Ex.: Válido por 7 dias. Frete não incluso." style="width:100%" onchange="saveDraft()"></div>
+        <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn small" onclick="copyQuote()">Copiar texto</button>
+          <button class="btn small danger" onclick="clearCart()">Limpar</button>
+          <button class="btn small" onclick="exportQuotePdf()">Exportar PDF</button>
+          <button class="btn small primary" onclick="saveQuote()">Salvar orçamento</button>
+        </div>
+        <p class="muted" style="font-size:12.5px;margin:10px 0 0">A margem por item (se preenchida) sobrepõe a padrão. Custo e quantidade são editáveis. O rascunho fica neste navegador; ao <b>Salvar</b>, o orçamento vai pro servidor (com número) e pode ser exportado em PDF. O PDF é a versão do cliente — não mostra custo nem margem.</p>
       </div>
       <div id="cart-body"></div>
+      <div class="card" id="quotes-panel" style="margin-top:14px">
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <h2 style="margin:0;font-size:16px">Orçamentos salvos</h2>
+          <button class="btn tiny" onclick="loadQuotes()">Atualizar</button>
+        </div>
+        <div id="quotes-list" style="margin-top:10px"></div>
+      </div>
     </div>
 
     <div id="view-suppliers" class="hidden">
@@ -398,7 +414,7 @@ function showView(v){
   }
   if(v==='search') renderSupplierFilter();
   if(v==='suppliers') renderSuppliers();
-  if(v==='cart') renderCart();
+  if(v==='cart'){ renderCart(); loadQuotes(); }
 }
 
 // ---------- suppliers ----------
@@ -789,17 +805,26 @@ function renderResults(){
   box.innerHTML = html;
 }
 
-// ---------- cart / quote (client-side, localStorage) ----------
+// ---------- cart / quote (rascunho no navegador; salvo/PDF no servidor) ----------
 let CART = [];
+let EDITING_ID = null;   // id do orcamento salvo em edicao (null = novo ao Salvar)
 function loadCart(){ try{ CART = JSON.parse(localStorage.getItem('compubot_cart')||'[]'); }catch(e){ CART=[]; }
-  const gm = localStorage.getItem('compubot_markup'); if(gm && $('#cart-markup')) $('#cart-markup').value = gm; updateCartBadge(); }
+  const gm = localStorage.getItem('compubot_markup'); if(gm && $('#cart-markup')) $('#cart-markup').value = gm;
+  if($('#cart-title')) $('#cart-title').value = localStorage.getItem('compubot_qtitle')||'';
+  if($('#cart-notes')) $('#cart-notes').value = localStorage.getItem('compubot_qnotes')||'';
+  EDITING_ID = localStorage.getItem('compubot_qid')||null;
+  updateCartBadge(); }
 function saveCart(){ localStorage.setItem('compubot_cart', JSON.stringify(CART));
   if($('#cart-markup')) localStorage.setItem('compubot_markup', $('#cart-markup').value); updateCartBadge(); }
+function saveDraft(){ localStorage.setItem('compubot_qtitle', ($('#cart-title')||{}).value||'');
+  localStorage.setItem('compubot_qnotes', ($('#cart-notes')||{}).value||'');
+  localStorage.setItem('compubot_qid', EDITING_ID||''); }
 function updateCartBadge(){ const b=$('#cart-badge'); if(!b) return; const n=CART.reduce((s,i)=>s+(i.qty||1),0);
   b.textContent=n; b.classList.toggle('show', n>0); }
 function globalMarkup(){ const v=parseFloat(($('#cart-markup')||{}).value); return isNaN(v)?0:v; }
 function effMarkup(it){ return (it.markup===''||it.markup==null||isNaN(parseFloat(it.markup)))?globalMarkup():parseFloat(it.markup); }
-function clientUnit(it){ const c=parseFloat(it.cost); if(isNaN(c)) return null; return c*(1+effMarkup(it)/100); }
+function clientUnit(it){ const o=parseFloat(it.cprice); if(!isNaN(o)) return o;   // preco fixado pelo vendedor tem prioridade
+  const c=parseFloat(it.cost); if(isNaN(c)) return null; return c*(1+effMarkup(it)/100); }
 
 function addToCart(idx, ti){
   const p = (window._items||[])[idx]; if(!p) return;
@@ -811,15 +836,19 @@ function addToCart(idx, ti){
   const ex = CART.find(x=>x.id===id);
   if(ex){ ex.qty=(ex.qty||1)+1; } else {
     CART.push({id, name, supplier:p.supplier, url:p.url, image:p.image,
-               cost:(cost!=null?cost:''), qty:1, markup:''});
+               cost:(cost!=null?cost:''), qty:1, markup:'', cprice:''});
   }
   saveCart();
   const btn=event&&event.target; if(btn){ const t=btn.textContent; btn.textContent='✓'; setTimeout(()=>btn.textContent=t,900); }
 }
 function updateCart(id, field, value){ const it=CART.find(x=>x.id===id); if(!it) return;
-  it[field]= field==='qty' ? Math.max(1, parseInt(value)||1) : value; saveCart(); renderCart(); }
+  if(field==='qty') it.qty=Math.max(1, parseInt(value)||1);
+  else { it[field]=value; if(field==='cost'||field==='markup') it.cprice=''; }  // mexeu em custo/margem: volta ao automatico
+  saveCart(); renderCart(); }
 function removeCart(id){ CART=CART.filter(x=>x.id!==id); saveCart(); renderCart(); }
-function clearCart(){ if(CART.length && !confirm('Limpar o carrinho?')) return; CART=[]; saveCart(); renderCart(); }
+function clearCart(){ if(CART.length && !confirm('Limpar o carrinho?')) return; CART=[]; EDITING_ID=null;
+  if($('#cart-title')) $('#cart-title').value=''; if($('#cart-notes')) $('#cart-notes').value='';
+  saveCart(); saveDraft(); renderCart(); loadQuotes(); }
 
 function renderCart(){
   const box=$('#cart-body'); if(!box) return; updateCartBadge();
@@ -834,7 +863,7 @@ function renderCart(){
       <td class="p" data-label="Custo un."><input type="number" step="0.01" value="${it.cost}" onchange="updateCart('${it.id}','cost',this.value)"></td>
       <td class="p" data-label="Qtd"><input type="number" step="1" min="1" value="${qty}" onchange="updateCart('${it.id}','qty',this.value)"></td>
       <td class="p" data-label="Margem %"><input type="number" step="1" placeholder="${globalMarkup()}" value="${it.markup}" onchange="updateCart('${it.id}','markup',this.value)"></td>
-      <td class="p" data-label="Preço cliente">${cu!=null?brl(cu):'—'}</td>
+      <td class="p" data-label="Preço cliente"><input type="number" step="0.01" class="cp${(it.cprice!==''&&it.cprice!=null&&!isNaN(parseFloat(it.cprice)))?' ovr':''}" value="${cu!=null?cu.toFixed(2):''}" placeholder="—" onchange="updateCart('${it.id}','cprice',this.value)" title="${(it.cprice!==''&&it.cprice!=null&&!isNaN(parseFloat(it.cprice)))?'Preço fixado — edite custo/margem para voltar ao automático':'Digite um preço para fixar o valor ao cliente (margem ignorada)'}"></td>
       <td class="p" data-label="Subtotal"><b>${sub!=null?brl(sub):'—'}</b></td>
       <td class="p"><button class="btn small danger" onclick="removeCart('${it.id}')">x</button></td>
     </tr>`;
@@ -869,6 +898,68 @@ function copyQuote(){
   navigator.clipboard.writeText(text).then(
     ()=>showToast('Orçamento copiado ✓'),
     ()=>{ showToast('Não consegui copiar automaticamente','err'); alert('Copie manualmente:\n\n'+text); });
+}
+
+// ---------- orcamentos salvos (backend) ----------
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmtDate(ts){ if(!ts) return ''; try{ return new Date(ts*1000).toLocaleDateString('pt-BR'); }catch(e){ return ''; } }
+function quotePayload(){
+  return { id: EDITING_ID||null, title: ($('#cart-title')||{}).value||'', notes: ($('#cart-notes')||{}).value||'',
+    markup: globalMarkup(),
+    items: CART.map(it=>({ name:it.name, supplier:it.supplier, url:it.url,
+                           cost:it.cost, qty:it.qty||1, markup:it.markup, cprice:it.cprice })) };
+}
+async function saveQuote(){
+  if(!CART.length){ showToast('Carrinho vazio','err'); return null; }
+  try{
+    const r=await fetch('/api/quotes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(quotePayload())});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.detail||('HTTP '+r.status)); }
+    const q=(await r.json()).quote; EDITING_ID=q.id; saveDraft();
+    showToast('Orçamento salvo Nº '+q.number+' ✓'); loadQuotes(); return q;
+  }catch(e){ showToast('Falha ao salvar: '+e.message,'err'); return null; }
+}
+async function exportQuotePdf(){
+  if(!CART.length && !EDITING_ID){ showToast('Carrinho vazio','err'); return; }
+  const q=await saveQuote();   // salva (cria ou atualiza) antes de gerar o PDF
+  if(!q) return;
+  window.open('/api/quotes/'+q.id+'/pdf','_blank');
+}
+async function loadQuotes(){
+  const box=$('#quotes-list'); if(!box) return;
+  try{
+    const r=await fetch('/api/quotes'); const L=(await r.json()).quotes||[];
+    if(!L.length){ box.innerHTML='<p class="muted" style="font-size:13px;margin:0">Nenhum orçamento salvo ainda. Monte o carrinho e clique em <b>Salvar orçamento</b>.</p>'; return; }
+    box.innerHTML='<div class="scroll"><table class="rwd"><tr class="hr"><th>Nº</th><th>Cliente</th><th class="p">Itens</th><th class="p">Total</th><th></th></tr>'+
+      L.map(q=>`<tr${q.id===EDITING_ID?' style="outline:2px solid var(--accent2);outline-offset:-2px"':''}>
+        <td data-label="Nº">#${esc(q.number)}</td>
+        <td data-label="Cliente">${esc(q.title)||'<span class="muted">(sem título)</span>'}<div class="muted" style="font-size:11px">${fmtDate(q.updatedAt||q.createdAt)}</div></td>
+        <td class="p" data-label="Itens">${q.items}</td>
+        <td class="p" data-label="Total"><b>${brl(q.total)}</b></td>
+        <td class="p"><button class="btn tiny" onclick="openQuote('${q.id}')">Abrir</button>
+          <button class="btn tiny" onclick="window.open('/api/quotes/${q.id}/pdf','_blank')">PDF</button>
+          <button class="btn tiny danger" onclick="deleteQuote('${q.id}')">x</button></td>
+      </tr>`).join('')+'</table></div>';
+  }catch(e){ box.innerHTML='<p class="muted">Erro ao carregar orçamentos.</p>'; }
+}
+async function openQuote(id){
+  try{
+    const r=await fetch('/api/quotes/'+id); if(!r.ok) throw 0; const q=await r.json();
+    CART=(q.items||[]).map(it=>({ id:(it.supplier||'')+'|'+(it.url||it.name), name:it.name, supplier:it.supplier, url:it.url, image:null,
+      cost:(it.cost!=null?it.cost:''), qty:it.qty||1, markup:(it.markup==null?'':it.markup), cprice:(it.cprice==null?'':it.cprice) }));
+    EDITING_ID=q.id;
+    if($('#cart-title')) $('#cart-title').value=q.title||'';
+    if($('#cart-notes')) $('#cart-notes').value=q.notes||'';
+    if($('#cart-markup')) $('#cart-markup').value=(q.markup!=null?q.markup:30);
+    saveCart(); saveDraft(); renderCart(); loadQuotes();
+    showToast('Orçamento #'+q.number+' aberto para edição');
+  }catch(e){ showToast('Não consegui abrir o orçamento','err'); }
+}
+async function deleteQuote(id){
+  if(!confirm('Apagar este orçamento? (não afeta o carrinho atual)')) return;
+  try{ await fetch('/api/quotes/'+id,{method:'DELETE'});
+    if(EDITING_ID===id){ EDITING_ID=null; saveDraft(); }
+    loadQuotes(); showToast('Orçamento apagado');
+  }catch(e){ showToast('Falha ao apagar','err'); }
 }
 
 boot();

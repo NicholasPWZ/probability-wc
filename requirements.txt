@@ -4,6 +4,7 @@ curl_cffi>=0.7.0
 beautifulsoup4>=4.12      # HTML parsing for user-configured (CSS-selector) sites
 camoufox>=0.5             # anti-detect Firefox for auto-login (browser via `camoufox fetch`)
 cryptography>=42.0        # Fernet encryption for stored supplier tokens
+fpdf2>=2.7                # gera o PDF do orcamento (pura-Python, sem libs de sistema)
 pydantic>=2.6
 pydantic-settings>=2.2
 python-dotenv>=1.0

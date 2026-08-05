@@ -1,0 +1,197 @@
+"""Render a saved quote to a client-facing PDF (fpdf2).
+
+The client PDF shows only what the customer should see: header (CompuJob logo, number,
+date), an optional client name, an itemized table (Produto | Qtd | Preco unit. | Subtotal)
+and the total. The reseller's COST/MARGIN/PROFIT are never printed.
+
+fpdf2 core font (Helvetica) is Latin-1, which covers Portuguese accents; `_safe` maps the
+few common non-Latin-1 glyphs that leak in from supplier product names (dashes, bullets,
+™, ², curly quotes) and replaces anything else so a weird listing never crashes the export.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+from fpdf import FPDF
+
+from app import quotes
+
+_LOGO = Path(__file__).parent / "static" / "compujob-logo.png"
+
+# accent (teal) + neutral grays
+_ACCENT = (13, 148, 136)
+_DARK = (31, 41, 55)
+_MUTED = (107, 114, 128)
+_HEAD_BG = (241, 245, 249)
+_ZEBRA = (249, 250, 251)
+_LINE = (226, 232, 240)
+
+_MAP = {"–": "-", "—": "-", "•": "-", "·": "-", "‘": "'",
+        "’": "'", "“": '"', "”": '"', "…": "...", "™": "(TM)",
+        "®": "(R)", "₂": "2", "²": "2", "³": "3", "×": "x",
+        "→": "->", " ": " "}
+
+
+def _safe(s) -> str:
+    s = str(s if s is not None else "")
+    for k, v in _MAP.items():
+        s = s.replace(k, v)
+    return s.encode("latin-1", "replace").decode("latin-1")
+
+
+def _brl(v) -> str:
+    if v is None:
+        return "-"
+    return "R$ " + f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _date(ts) -> str:
+    import datetime
+    try:
+        return datetime.datetime.fromtimestamp(int(ts)).strftime("%d/%m/%Y")
+    except Exception:
+        return ""
+
+
+class _Quote(FPDF):
+    def footer(self):
+        self.set_y(-14)
+        self.set_font("Helvetica", size=8)
+        self.set_text_color(*_MUTED)
+        self.cell(0, 6, _safe("Gerado por Compubot - CompuJob"), align="L")
+        self.cell(0, 6, _safe(f"Página {self.page_no()}/{{nb}}"), align="R")
+
+
+def render_quote_pdf(quote: dict) -> bytes:
+    gm = quotes.totals(quote)
+    pdf = _Quote(orientation="P", unit="mm", format="A4")
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(True, margin=18)
+    pdf.set_margins(15, 14, 15)
+    pdf.add_page()
+
+    # ---- header: logo + title/number/date --------------------------------
+    top = pdf.get_y()
+    if _LOGO.exists():
+        try:
+            pdf.image(str(_LOGO), x=15, y=top, h=16)
+        except Exception:
+            pass
+    pdf.set_xy(35, top)
+    pdf.set_font("Helvetica", "B", 15)
+    pdf.set_text_color(*_DARK)
+    pdf.cell(0, 8, "CompuJob", ln=1)
+    pdf.set_x(35)
+    pdf.set_font("Helvetica", size=9)
+    pdf.set_text_color(*_MUTED)
+    pdf.cell(0, 5, _safe("Comparador e orçamentos"))
+
+    pdf.set_xy(120, top)
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(*_ACCENT)
+    pdf.cell(75, 8, "ORÇAMENTO", align="R", ln=1)
+    pdf.set_x(120)
+    pdf.set_font("Helvetica", size=10)
+    pdf.set_text_color(*_DARK)
+    pdf.cell(75, 5, _safe(f"Nº {quote.get('number','')}"), align="R", ln=1)
+    pdf.set_x(120)
+    pdf.set_text_color(*_MUTED)
+    pdf.cell(75, 5, _safe("Data: " + _date(quote.get("updatedAt") or quote.get("createdAt"))), align="R", ln=1)
+
+    pdf.set_y(top + 20)
+    pdf.set_draw_color(*_LINE)
+    pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+    pdf.ln(4)
+
+    # ---- client ----------------------------------------------------------
+    title = (quote.get("title") or "").strip()
+    if title:
+        pdf.set_font("Helvetica", size=10)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(16, 6, _safe("Cliente:"))
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(*_DARK)
+        pdf.cell(0, 6, _safe(title), ln=1)
+        pdf.ln(2)
+
+    # ---- items table -----------------------------------------------------
+    widths = (95, 20, 32, 33)
+    heads = ("Produto", "Qtd", "Preço unit.", "Subtotal")
+    aligns = ("L", "C", "R", "R")
+    pdf.set_font("Helvetica", "B", 9.5)
+    pdf.set_fill_color(*_HEAD_BG)
+    pdf.set_text_color(*_DARK)
+    pdf.set_draw_color(*_LINE)
+    for w, h, a in zip(widths, heads, aligns):
+        pdf.cell(w, 8, h, border="B", align=a, fill=True)
+    pdf.ln(8)
+
+    pdf.set_font("Helvetica", size=9.5)
+    zebra = False
+    for it in quote.get("items", []):
+        qty = int(it.get("qty") or 1)
+        cu = quotes.client_unit(it, quotes._num(quote.get("markup")) or 0.0)
+        sub = round(cu * qty, 2) if cu is not None else None
+        name = _safe(it.get("name") or "(sem nome)")
+        supplier = _safe(it.get("supplier") or "")
+
+        # measure wrapped product name to size the row height
+        x0, y0 = pdf.get_x(), pdf.get_y()
+        line_h = 5
+        lines = pdf.multi_cell(widths[0], line_h, name, dry_run=True, output="LINES")
+        n_name = max(1, len(lines))
+        row_h = max(9, n_name * line_h + (4 if supplier else 0))
+
+        if y0 + row_h > pdf.page_break_trigger:
+            pdf.add_page()
+            y0 = pdf.get_y()
+            x0 = pdf.get_x()
+
+        fill = _ZEBRA if zebra else (255, 255, 255)
+        pdf.set_fill_color(*fill)
+        # background block for the whole row
+        pdf.rect(x0, y0, sum(widths), row_h, style="F")
+        # product name (+ supplier muted)
+        pdf.set_xy(x0, y0 + 1)
+        pdf.set_text_color(*_DARK)
+        pdf.multi_cell(widths[0], line_h, name, align="L")
+        if supplier:
+            pdf.set_x(x0)
+            pdf.set_font("Helvetica", size=7.5)
+            pdf.set_text_color(*_MUTED)
+            pdf.cell(widths[0], 3.5, supplier)
+            pdf.set_font("Helvetica", size=9.5)
+        # numeric columns, vertically centered-ish
+        pdf.set_text_color(*_DARK)
+        cy = y0 + (row_h - line_h) / 2
+        pdf.set_xy(x0 + widths[0], cy)
+        pdf.cell(widths[1], line_h, str(qty), align="C")
+        pdf.cell(widths[2], line_h, _brl(cu), align="R")
+        pdf.cell(widths[3], line_h, _brl(sub), align="R")
+        # bottom divider
+        pdf.set_draw_color(*_LINE)
+        pdf.line(x0, y0 + row_h, x0 + sum(widths), y0 + row_h)
+        pdf.set_xy(x0, y0 + row_h)
+        zebra = not zebra
+
+    # ---- total -----------------------------------------------------------
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_text_color(*_DARK)
+    pdf.cell(sum(widths[:2]) + widths[2], 10, "TOTAL", align="R")
+    pdf.set_text_color(*_ACCENT)
+    pdf.cell(widths[3], 10, _brl(gm["total"]), align="R", ln=1)
+
+    # ---- notes -----------------------------------------------------------
+    notes = (quote.get("notes") or "").strip()
+    if notes:
+        pdf.ln(4)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(0, 5, _safe("Observações"), ln=1)
+        pdf.set_font("Helvetica", size=9)
+        pdf.set_text_color(*_DARK)
+        pdf.multi_cell(0, 5, _safe(notes))
+
+    out = pdf.output()
+    return bytes(out)

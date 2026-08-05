@@ -36,3 +36,13 @@ class SiteConfig(BaseModel):
 
 class SiteTest(SiteConfig):
     query: str = "teste"           # sample term for a dry-run parse
+
+
+class QuoteRequest(BaseModel):
+    """Save/update a quote (orcamento). Items are permissive dicts: cost/markup may be a
+    number or "" (empty = use the global markup); the store coerces/normalizes them."""
+    id: str | None = None          # present = update; absent = create (gets a new number)
+    title: str = ""                # client / quote title
+    notes: str = ""                # observacoes (printed on the PDF)
+    markup: float = 0              # global margin %
+    items: list[dict] = []

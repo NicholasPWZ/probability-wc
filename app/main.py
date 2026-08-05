@@ -19,9 +19,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import auth, store, suppliers
+from app import auth, pdf, quotes, store, suppliers
 from app.config import get_settings
-from app.models import LoginRequest, SiteConfig, SiteTest, SupplierUpsert, TokenRequest
+from app.models import (LoginRequest, QuoteRequest, SiteConfig, SiteTest,
+                        SupplierUpsert, TokenRequest)
 from app.suppliers.generic import GenericAdapter
 
 
@@ -366,6 +367,44 @@ async def api_search_one(q: str, supplier: str):
     if len(q) < 2:
         raise HTTPException(status_code=400, detail="Digite ao menos 2 caracteres.")
     return await run_in_threadpool(_search_one_safe, (supplier or "").strip(), q)
+
+
+# --------------------------------------------------------------------------
+# quotes (orcamentos): create/save, list, open, delete + assembled PDF export
+# --------------------------------------------------------------------------
+@compubot.get("/api/quotes", dependencies=[Depends(auth.require_auth)])
+async def api_quotes_list():
+    return {"quotes": quotes.list_quotes()}
+
+
+@compubot.post("/api/quotes", dependencies=[Depends(auth.require_auth)])
+async def api_quotes_save(req: QuoteRequest):
+    return {"quote": quotes.save_quote(req.model_dump())}
+
+
+@compubot.get("/api/quotes/{qid}", dependencies=[Depends(auth.require_auth)])
+async def api_quotes_get(qid: str):
+    q = quotes.get_quote(qid)
+    if not q:
+        raise HTTPException(status_code=404, detail="Orcamento nao encontrado.")
+    return q
+
+
+@compubot.delete("/api/quotes/{qid}", dependencies=[Depends(auth.require_auth)])
+async def api_quotes_delete(qid: str):
+    quotes.delete_quote(qid)
+    return {"ok": True}
+
+
+@compubot.get("/api/quotes/{qid}/pdf", dependencies=[Depends(auth.require_auth)])
+async def api_quotes_pdf(qid: str):
+    q = quotes.get_quote(qid)
+    if not q:
+        raise HTTPException(status_code=404, detail="Orcamento nao encontrado.")
+    data = await run_in_threadpool(pdf.render_quote_pdf, q)
+    fn = f"orcamento-{q.get('number','') or qid}.pdf"
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{fn}"'})
 
 
 # --------------------------------------------------------------------------
