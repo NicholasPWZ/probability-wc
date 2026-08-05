@@ -80,7 +80,7 @@ def render_quote_pdf(quote: dict) -> bytes:
             pdf.image(str(_LOGO), x=15, y=top, h=16)
         except Exception:
             pass
-    pdf.set_xy(35, top)
+    pdf.set_xy(41, top)
     pdf.set_font("Helvetica", "B", 15)
     pdf.set_text_color(*_DARK)
     pdf.cell(0, 8, _safe(cfg.company_name or "CompuJob"), ln=1)
@@ -100,8 +100,8 @@ def render_quote_pdf(quote: dict) -> bytes:
     pdf.set_text_color(*_MUTED)
     iy = top + 8.5
     for line in info:
-        pdf.set_xy(35, iy)
-        pdf.cell(80, 4, _safe(line))
+        pdf.set_xy(41, iy)
+        pdf.cell(74, 4, _safe(line))
         iy += 4
 
     pdf.set_xy(120, top)
