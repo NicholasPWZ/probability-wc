@@ -81,6 +81,7 @@
   input.cp{width:96px}
   input.cp.ovr{outline:2px solid var(--accent2);outline-offset:-2px;font-weight:600}
   input.dname{width:100%;max-width:280px;font-size:12px;margin-top:5px;padding:4px 8px}
+  input.pname{width:100%;max-width:320px;font-weight:600}
   .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);
     border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
   @keyframes s{to{transform:rotate(360deg)}}
@@ -288,6 +289,17 @@
       </div>
 
       <div id="cart-tab-itens">
+        <div class="card" style="padding:12px 14px;margin-bottom:14px">
+          <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div style="flex:2;min-width:200px"><label style="margin:0 0 4px;display:block">Adicionar produto avulso <span class="muted">(fora da busca)</span></label>
+              <input id="add-name" type="text" placeholder="Nome do produto" style="width:100%" onkeydown="if(event.key==='Enter')addManualProduct()"></div>
+            <div><label style="margin:0 0 4px;display:block">Custo</label>
+              <input id="add-cost" type="number" step="0.01" placeholder="0,00" style="width:110px" onkeydown="if(event.key==='Enter')addManualProduct()"></div>
+            <div><label style="margin:0 0 4px;display:block">Qtd</label>
+              <input id="add-qty" type="number" min="1" value="1" style="width:80px" onkeydown="if(event.key==='Enter')addManualProduct()"></div>
+            <button class="btn small primary" onclick="addManualProduct()">Adicionar</button>
+          </div>
+        </div>
         <div id="cart-body"></div>
       </div>
 
@@ -965,6 +977,16 @@ function addToCart(idx, ti){
   saveCart();
   const btn=event&&event.target; if(btn){ const t=btn.textContent; btn.textContent='✓'; setTimeout(()=>btn.textContent=t,900); }
 }
+// adiciona um produto AVULSO (fora da busca) para centralizar orcamentos com itens nao encontrados no Compubot
+function addManualProduct(){
+  const el=$('#add-name'); const name=(el&&el.value||'').trim();
+  if(!name){ showToast('Digite o nome do produto','err'); if(el) el.focus(); return; }
+  const cost=parseFloat(($('#add-cost')||{}).value); const qty=Math.max(1, parseInt(($('#add-qty')||{}).value)||1);
+  CART.push({ id:'m|'+name+'|'+Date.now()+'|'+Math.floor(Math.random()*1e4), name, supplier:'', url:'', image:null,
+              cost:(isNaN(cost)?'':cost), qty, markup:'', cprice:'', dname:'' });
+  if($('#add-name')) $('#add-name').value=''; if($('#add-cost')) $('#add-cost').value=''; if($('#add-qty')) $('#add-qty').value='1';
+  saveCart(); renderCart(); showToast('Produto adicionado'); if($('#add-name')) $('#add-name').focus();
+}
 function updateCart(id, field, value){ const it=CART.find(x=>x.id===id); if(!it) return;
   if(field==='qty') it.qty=Math.max(1, parseInt(value)||1);
   else { it[field]=value; if(field==='cost'||field==='markup') it.cprice=''; }  // mexeu em custo/margem: volta ao automatico
@@ -982,8 +1004,10 @@ function renderCart(){
     const cu=clientUnit(it), qty=it.qty||1, c=parseFloat(it.cost);
     const sub = cu!=null?cu*qty:null; if(!isNaN(c)) totCost+=c*qty; if(sub!=null) totClient+=sub;
     return `<tr>
-      <td data-label="Produto"><a href="${it.url}" target="_blank" rel="noopener"><b>${it.name}</b></a>
-        <div class="muted" style="font-size:12px">${it.supplier||''}</div>
+      <td data-label="Produto">${it.url
+          ? `<a href="${it.url}" target="_blank" rel="noopener"><b>${esc(it.name)}</b></a>`
+          : `<input type="text" class="pname" value="${esc(it.name)}" placeholder="Nome do produto" onchange="updateCart('${it.id}','name',this.value)">`}
+        <div class="muted" style="font-size:12px">${esc(it.supplier||(it.url?'':'avulso'))}</div>
         <input type="text" class="dname" value="${esc(it.dname||'')}" placeholder="Nome no PDF (opcional)" onchange="updateCart('${it.id}','dname',this.value)" title="Como o produto aparece pro cliente no PDF. Vazio = usa o nome acima. O fornecedor nunca aparece no PDF."></td>
       <td class="p" data-label="Custo un."><input type="number" step="0.01" value="${it.cost}" onchange="updateCart('${it.id}','cost',this.value)"></td>
       <td class="p" data-label="Qtd"><input type="number" step="1" min="1" value="${qty}" onchange="updateCart('${it.id}','qty',this.value)"></td>
@@ -1088,7 +1112,7 @@ async function loadQuotes(){
 async function openQuote(id){
   try{
     const r=await fetch('/api/quotes/'+id); if(!r.ok) throw 0; const q=await r.json();
-    CART=(q.items||[]).map(it=>({ id:(it.supplier||'')+'|'+(it.url||it.name), name:it.name, dname:(it.dname||''), supplier:it.supplier, url:it.url, image:null,
+    CART=(q.items||[]).map((it,i)=>({ id:(it.supplier||'')+'|'+(it.url||it.name)+'|'+i, name:it.name, dname:(it.dname||''), supplier:it.supplier, url:it.url, image:null,
       cost:(it.cost!=null?it.cost:''), qty:it.qty||1, markup:(it.markup==null?'':it.markup), cprice:(it.cprice==null?'':it.cprice) }));
     EDITING_ID=q.id; EDITING_NUMBER=q.number;
     if($('#cart-title')) $('#cart-title').value=q.title||'';
