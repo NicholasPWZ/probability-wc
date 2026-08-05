@@ -43,6 +43,8 @@ class QuoteRequest(BaseModel):
     number or "" (empty = use the global markup); the store coerces/normalizes them."""
     id: str | None = None          # present = update; absent = create (gets a new number)
     title: str = ""                # nome do cliente
+    clientAddress: str = ""        # endereco do cliente (opcional, sai no PDF)
+    clientCnpj: str = ""           # CNPJ do cliente (opcional, sai no PDF)
     seller: str = ""               # nome do vendedor
     sellerEmail: str = ""          # e-mail corporativo do vendedor
     notes: str = ""                # observacoes (printed on the PDF)

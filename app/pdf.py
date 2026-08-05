@@ -122,39 +122,59 @@ def render_quote_pdf(quote: dict) -> bytes:
     pdf.line(15, div_y, 195, div_y)
     pdf.ln(4)
 
-    # ---- cliente | vendedor (blocos opcionais) ---------------------------
+    # ---- cliente | vendedor (blocos opcionais, altura dinamica) ----------
     client = (quote.get("title") or "").strip()
+    client_addr = (quote.get("clientAddress") or "").strip()
+    client_cnpj = (quote.get("clientCnpj") or "").strip()
     seller = (quote.get("seller") or "").strip()
     seller_email = (quote.get("sellerEmail") or "").strip()
-    if client or seller or seller_email:
+    if client or client_addr or client_cnpj or seller or seller_email:
         by = pdf.get_y()
-        if client:
-            pdf.set_xy(15, by)
+        # coluna CLIENTE (esquerda): nome + endereco + CNPJ (so os preenchidos)
+        left_y = by
+        if client or client_addr or client_cnpj:
+            pdf.set_xy(15, left_y)
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_text_color(*_MUTED)
             pdf.cell(90, 4, _safe("CLIENTE"))
-            pdf.set_xy(15, by + 4.5)
-            pdf.set_font("Helvetica", "B", 11)
-            pdf.set_text_color(*_DARK)
-            pdf.cell(90, 6, _safe(client))
+            left_y += 4.5
+            if client:
+                pdf.set_xy(15, left_y)
+                pdf.set_font("Helvetica", "B", 11)
+                pdf.set_text_color(*_DARK)
+                pdf.cell(90, 6, _safe(client))
+                left_y += 6
+            pdf.set_font("Helvetica", size=9)
+            pdf.set_text_color(*_MUTED)
+            if client_addr:
+                pdf.set_xy(15, left_y)
+                pdf.multi_cell(92, 4.5, _safe(client_addr))
+                left_y = pdf.get_y()
+            if client_cnpj:
+                pdf.set_xy(15, left_y)
+                pdf.cell(92, 4.5, _safe("CNPJ: " + client_cnpj))
+                left_y += 4.5
+        # coluna VENDEDOR (direita)
+        right_y = by
         if seller or seller_email:
-            pdf.set_xy(110, by)
+            pdf.set_xy(110, right_y)
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_text_color(*_MUTED)
             pdf.cell(85, 4, _safe("VENDEDOR"))
-            yy = by + 4.5
+            right_y += 4.5
             if seller:
-                pdf.set_xy(110, yy)
+                pdf.set_xy(110, right_y)
                 pdf.set_font("Helvetica", "B", 10.5)
                 pdf.set_text_color(*_DARK)
                 pdf.cell(85, 5.5, _safe(seller))
-                yy += 5.5
+                right_y += 5.5
             if seller_email:
-                pdf.set_xy(110, yy)
+                pdf.set_xy(110, right_y)
                 pdf.set_font("Helvetica", size=9)
                 pdf.set_text_color(*_MUTED)
                 pdf.cell(85, 5, _safe(seller_email))
-        pdf.set_y(by + 16)
+                right_y += 5
+        pdf.set_y(max(left_y, right_y) + 4)
 
     # ---- itens ----------------------------------------------------------
     # "exibir apenas preco final" esconde o preco unitario. Com um "nome do conjunto" (final_name)
