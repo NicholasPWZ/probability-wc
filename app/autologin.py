@@ -13,6 +13,19 @@ import threading
 
 from app.config import get_settings, supplier_credentials
 
+
+def _reatacado_verify(session) -> bool:
+    """Confirma o login do RE Atacado: preco so aparece LOGADO -> uma busca deve trazer preco nos cards
+    (visitante nao ve .price e a pagina so tem 1 'R$' no rodape). Verificacao definitiva pro objetivo."""
+    try:
+        from bs4 import BeautifulSoup
+        r = session.get("https://www.reatacado.com.br/index.php?route=product/search&search=cabo")
+        soup = BeautifulSoup(r.text, "html.parser")
+        return len(soup.select(".product-thumb .price")) > 0 or (r.text or "").count("R$") > 5
+    except Exception:
+        return False
+
+
 # Per-supplier login recipe. Keys: loginUrl, user, pw (CSS selectors); optional `reveal`
 # (selector to click first to show the form) and `submit` (button selector; if omitted,
 # presses Enter on the password field). `domain` filters the cookies to keep. The final
@@ -61,8 +74,8 @@ RECIPES: dict[str, dict] = {
         "loginUrl": "https://www.reatacado.com.br/index.php?route=account/login",
         "userField": "email", "passField": "password",
         "domain": "reatacado.com.br",
-        # logado = a pagina tem link de logout (guest so tem login/register). Robusto (independe de redirect).
-        "success": lambda url, html: "account/logout" in (html or "").lower(),
+        # confirma via BUSCA: se aparecem precos, esta logado (independe de tema/redirect)
+        "verify": _reatacado_verify,
     },
     "braile": {  # WMW SPA, login num modal (abre por um trigger no header)
         "loginUrl": "https://www.brailedistribuidora.com.br/",
@@ -113,18 +126,26 @@ def _http_login(key: str, recipe: dict, user: str, pwd: str) -> str | None:
     r = s.post(action, data=data, allow_redirects=True,
                headers={"referer": login_url, "origin": f"{u.scheme}://{u.netloc}",
                         "content-type": "application/x-www-form-urlencoded"})
-    # confirma o login na pagina de conta (mais confiavel que a URL: independe de seguir o 302)
-    acc = None
-    try:
-        acc = s.get(f"{u.scheme}://{u.netloc}/index.php?route=account/account")
-    except Exception:
-        pass
-    chk_url = (acc.url if acc is not None else r.url) or ""
-    chk_html = (acc.text if acc is not None else r.text) or ""
-    try:
-        ok = bool(recipe["success"](chk_url, chk_html))
-    except Exception:
-        ok = True
+    # confirmacao de login: `verify(session)` (mais confiavel — ex.: precos aparecem) OU
+    # `success(url, html)` na pagina de conta (independe de seguir o 302).
+    verify = recipe.get("verify")
+    if verify:
+        try:
+            ok = bool(verify(s))
+        except Exception:
+            ok = False
+    else:
+        acc = None
+        try:
+            acc = s.get(f"{u.scheme}://{u.netloc}/index.php?route=account/account")
+        except Exception:
+            pass
+        chk_url = (acc.url if acc is not None else r.url) or ""
+        chk_html = (acc.text if acc is not None else r.text) or ""
+        try:
+            ok = bool(recipe.get("success", lambda *_: True)(chk_url, chk_html))
+        except Exception:
+            ok = True
     if ok:
         _last_error.pop(key, None)
     else:
@@ -137,7 +158,7 @@ def _http_login(key: str, recipe: dict, user: str, pwd: str) -> str | None:
                     break
         except Exception:
             pass
-        _last_error[key] = msg or "login nao confirmado"
+        _last_error[key] = msg or "login nao confirmado (precos nao apareceram apos logar - conta aprovada p/ atacado?)"
         return None   # nao persiste cookie de visitante
     jar = "; ".join(f"{k}={v}" for k, v in s.cookies.items() if v is not None)
     return jar or None
