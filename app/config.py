@@ -29,6 +29,30 @@ except Exception:
     pass
 
 
+def company_profiles() -> list[dict]:
+    """Empresas VENDEDORAS do .env (COMPANY1_*/COMPANY2_*/COMPANY3_*): o vendedor escolhe qual esta
+    vendendo (seletor na tela) e o cabecalho do PDF muda. Cada perfil = name/cnpj/address/phone/mobile.
+    Fallback: se nenhuma COMPANYn_NAME existir, usa a COMPANY_* legada como empresa unica."""
+    out: list[dict] = []
+    for i in (1, 2, 3):
+        p = f"COMPANY{i}_"
+        name = (os.environ.get(p + "NAME") or "").strip()
+        if not name:
+            continue
+        out.append({
+            "name": name,
+            "cnpj": (os.environ.get(p + "CNPJ") or "").strip(),
+            "address": (os.environ.get(p + "ADDRESS") or "").strip(),
+            "phone": (os.environ.get(p + "PHONE") or "").strip(),
+            "mobile": (os.environ.get(p + "MOBILE") or "").strip(),
+        })
+    if not out:
+        s = get_settings()
+        out.append({"name": s.company_name or "CompuJob", "cnpj": s.company_cnpj,
+                    "address": s.company_address, "phone": s.company_phone, "mobile": s.company_mobile})
+    return out
+
+
 def supplier_credentials(key: str) -> tuple[str | None, str | None]:
     """Login user/password for a supplier from .env, e.g. DIGIMACRO_USER / DIGIMACRO_PASS."""
     u = os.environ.get(f"{key.upper()}_USER")

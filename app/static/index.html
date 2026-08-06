@@ -307,12 +307,19 @@
         <div class="card">
           <div class="sec">
             <div class="sec-title">Empresa, cliente e vendedor</div>
+            <div id="company-picker-row" class="hidden" style="margin-bottom:12px">
+              <label style="margin:0 0 4px;display:block">Empresa <span class="muted">(quem está vendendo — muda o cabeçalho do PDF)</span></label>
+              <select id="cart-company-sel" onchange="selectCompany(this.value)" style="width:100%"></select>
+            </div>
             <div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:12px">
               <div style="flex:2;min-width:200px"><label style="margin:0 0 4px;display:block">Nome da empresa <span class="muted">(cabeçalho do PDF)</span></label>
-                <input id="cart-company" type="text" placeholder="CompuJob" style="width:100%" onchange="saveDraft()"></div>
+                <input id="cart-company" type="text" placeholder="CompuJob" style="width:100%" onchange="onCompanyFieldEdit()"></div>
               <div style="flex:1;min-width:160px"><label style="margin:0 0 4px;display:block">CNPJ da empresa</label>
-                <input id="cart-company-cnpj" type="text" placeholder="00.000.000/0001-00" style="width:100%" onchange="saveDraft()"></div>
+                <input id="cart-company-cnpj" type="text" placeholder="00.000.000/0001-00" style="width:100%" onchange="onCompanyFieldEdit()"></div>
             </div>
+            <div style="margin-bottom:12px"><label style="margin:0 0 4px;display:block">Endereço da empresa <span class="muted">(opcional)</span></label>
+              <input id="cart-company-addr" type="text" placeholder="Rua X, 123 - Centro - Cidade/UF" style="width:100%" onchange="onCompanyFieldEdit()"></div>
+            <input type="hidden" id="cart-company-phone"><input type="hidden" id="cart-company-mobile">
             <div class="row" style="gap:12px;flex-wrap:wrap;align-items:flex-end">
               <div style="flex:1;min-width:200px"><label style="margin:0 0 4px;display:block">Cliente</label>
                 <input id="cart-title" type="text" placeholder="Ex.: João da Silva" style="width:100%" onchange="saveDraft()"></div>
@@ -475,7 +482,7 @@ function priceCell(p, i){
 async function boot(){
   try{
     const c = await api('/api/config');
-    APP_COMPANY_DEFAULT = c.company || ''; APP_CNPJ_DEFAULT = c.companyCnpj || '';
+    APP_COMPANIES = c.companies || [];
     if(c.authed){ enterApp(); }
     else { $('#login').classList.remove('hidden'); if(!c.appConfigured) $('#login-msg').textContent='Defina APP_PASSWORD no servidor.'; }
   }catch(e){ $('#login').classList.remove('hidden'); }
@@ -898,13 +905,22 @@ function renderResults(){
 let CART = [];
 let EDITING_ID = null;   // id do orcamento salvo em edicao (null = novo ao Salvar)
 let EDITING_NUMBER = null;   // numero do orcamento em edicao (so p/ exibir)
-let APP_COMPANY_DEFAULT = '';   // default do nome da empresa (vem do .env via /api/config)
-let APP_CNPJ_DEFAULT = '';      // default do CNPJ da empresa (vem do .env via /api/config)
+let APP_COMPANIES = [];   // empresas vendedoras (do .env via /api/config); [0] = default
 function loadCart(){ try{ CART = JSON.parse(localStorage.getItem('compubot_cart')||'[]'); }catch(e){ CART=[]; }
   const gm = localStorage.getItem('compubot_markup'); if(gm && $('#cart-markup')) $('#cart-markup').value = gm;
   if($('#cart-title')) $('#cart-title').value = localStorage.getItem('compubot_qtitle')||'';
-  if($('#cart-company')) $('#cart-company').value = localStorage.getItem('compubot_qcompany') || APP_COMPANY_DEFAULT || '';
-  if($('#cart-company-cnpj')) $('#cart-company-cnpj').value = localStorage.getItem('compubot_qcompanycnpj') || APP_CNPJ_DEFAULT || '';
+  renderCompanySelector();
+  if(localStorage.getItem('compubot_qcompany')===null && APP_COMPANIES.length){   // orcamento novo: perfil 0
+    if($('#cart-company-sel')) $('#cart-company-sel').value='0';
+    selectCompany(0);
+  } else {
+    if($('#cart-company')) $('#cart-company').value = localStorage.getItem('compubot_qcompany')||'';
+    if($('#cart-company-cnpj')) $('#cart-company-cnpj').value = localStorage.getItem('compubot_qcompanycnpj')||'';
+    if($('#cart-company-addr')) $('#cart-company-addr').value = localStorage.getItem('compubot_qcompanyaddr')||'';
+    if($('#cart-company-phone')) $('#cart-company-phone').value = localStorage.getItem('compubot_qcphone')||'';
+    if($('#cart-company-mobile')) $('#cart-company-mobile').value = localStorage.getItem('compubot_qcmobile')||'';
+    if($('#cart-company-sel')) $('#cart-company-sel').value = localStorage.getItem('compubot_qcompanyidx')||'-1';
+  }
   try{ setClientLines(JSON.parse(localStorage.getItem('compubot_qclines')||'[]')); }catch(e){ setClientLines([]); }
   if($('#cart-seller')) $('#cart-seller').value = localStorage.getItem('compubot_qseller')||'';
   if($('#cart-seller-email')) $('#cart-seller-email').value = localStorage.getItem('compubot_qsemail')||'';
@@ -943,6 +959,10 @@ function saveCart(){ localStorage.setItem('compubot_cart', JSON.stringify(CART))
 function saveDraft(){ localStorage.setItem('compubot_qtitle', ($('#cart-title')||{}).value||'');
   localStorage.setItem('compubot_qcompany', ($('#cart-company')||{}).value||'');
   localStorage.setItem('compubot_qcompanycnpj', ($('#cart-company-cnpj')||{}).value||'');
+  localStorage.setItem('compubot_qcompanyaddr', ($('#cart-company-addr')||{}).value||'');
+  localStorage.setItem('compubot_qcphone', ($('#cart-company-phone')||{}).value||'');
+  localStorage.setItem('compubot_qcmobile', ($('#cart-company-mobile')||{}).value||'');
+  localStorage.setItem('compubot_qcompanyidx', ($('#cart-company-sel')||{}).value||'-1');
   localStorage.setItem('compubot_qclines', JSON.stringify(clientLinesVals()));
   localStorage.setItem('compubot_qseller', ($('#cart-seller')||{}).value||'');
   localStorage.setItem('compubot_qsemail', ($('#cart-seller-email')||{}).value||'');
@@ -952,6 +972,26 @@ function saveDraft(){ localStorage.setItem('compubot_qtitle', ($('#cart-title')|
   localStorage.setItem('compubot_qfinalqty', ($('#cart-finalqty')||{}).value||'1');
   localStorage.setItem('compubot_qid', EDITING_ID||'');
   localStorage.setItem('compubot_qnum', EDITING_NUMBER||''); }
+// empresa VENDEDORA: seletor preenche nome/CNPJ/endereco/telefones do perfil escolhido (.env).
+// tudo continua editavel; editar um campo troca o seletor p/ "Personalizado".
+function renderCompanySelector(){
+  const sel=$('#cart-company-sel'), row=$('#company-picker-row'); if(!sel) return;
+  sel.innerHTML = APP_COMPANIES.map((co,i)=>`<option value="${i}">${esc(co.name||('Empresa '+(i+1)))}</option>`).join('')
+                + '<option value="-1">— Personalizado —</option>';
+  if(row) row.classList.toggle('hidden', APP_COMPANIES.length < 2);   // seletor so aparece com 2+ empresas
+}
+function selectCompany(idx){
+  idx=parseInt(idx); const co=APP_COMPANIES[idx];
+  if(idx>=0 && co){
+    if($('#cart-company')) $('#cart-company').value=co.name||'';
+    if($('#cart-company-cnpj')) $('#cart-company-cnpj').value=co.cnpj||'';
+    if($('#cart-company-addr')) $('#cart-company-addr').value=co.address||'';
+    if($('#cart-company-phone')) $('#cart-company-phone').value=co.phone||'';
+    if($('#cart-company-mobile')) $('#cart-company-mobile').value=co.mobile||'';
+  }
+  saveDraft();
+}
+function onCompanyFieldEdit(){ const sel=$('#cart-company-sel'); if(sel) sel.value='-1'; saveDraft(); }
 // linhas livres do cliente (endereco, CNPJ, contato...) — o vendedor adiciona o que precisar
 function clineRow(val){
   const d=document.createElement('div'); d.className='row'; d.style.cssText='gap:6px;margin-top:6px';
@@ -1076,6 +1116,7 @@ function fmtDate(ts){ if(!ts) return ''; try{ return new Date(ts*1000).toLocaleD
 function quotePayload(){
   return { id: EDITING_ID||null, title: ($('#cart-title')||{}).value||'',
     clientLines: clientLinesVals(), companyName: ($('#cart-company')||{}).value||'', companyCnpj: ($('#cart-company-cnpj')||{}).value||'',
+    companyAddress: ($('#cart-company-addr')||{}).value||'', companyPhone: ($('#cart-company-phone')||{}).value||'', companyMobile: ($('#cart-company-mobile')||{}).value||'',
     seller: ($('#cart-seller')||{}).value||'', sellerEmail: ($('#cart-seller-email')||{}).value||'',
     notes: ($('#cart-notes')||{}).value||'', markup: globalMarkup(),
     finalOnly: !!(($('#cart-finalonly')||{}).checked), finalName: ($('#cart-finalname')||{}).value||'',
@@ -1123,8 +1164,12 @@ async function openQuote(id){
       cost:(it.cost!=null?it.cost:''), qty:it.qty||1, markup:(it.markup==null?'':it.markup), cprice:(it.cprice==null?'':it.cprice) }));
     EDITING_ID=q.id; EDITING_NUMBER=q.number;
     if($('#cart-title')) $('#cart-title').value=q.title||'';
-    if($('#cart-company')) $('#cart-company').value=q.companyName||APP_COMPANY_DEFAULT||'';
-    if($('#cart-company-cnpj')) $('#cart-company-cnpj').value=q.companyCnpj||APP_CNPJ_DEFAULT||'';
+    if($('#cart-company')) $('#cart-company').value=q.companyName||'';
+    if($('#cart-company-cnpj')) $('#cart-company-cnpj').value=q.companyCnpj||'';
+    if($('#cart-company-addr')) $('#cart-company-addr').value=q.companyAddress||'';
+    if($('#cart-company-phone')) $('#cart-company-phone').value=q.companyPhone||'';
+    if($('#cart-company-mobile')) $('#cart-company-mobile').value=q.companyMobile||'';
+    if($('#cart-company-sel')){ const i=APP_COMPANIES.findIndex(co=>(co.name||'')===(q.companyName||'')&&(co.cnpj||'')===(q.companyCnpj||'')); $('#cart-company-sel').value=String(i>=0?i:-1); }
     setClientLines(q.clientLines||[]);
     if($('#cart-seller')) $('#cart-seller').value=q.seller||'';
     if($('#cart-seller-email')) $('#cart-seller-email').value=q.sellerEmail||'';

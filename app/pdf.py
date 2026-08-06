@@ -15,7 +15,7 @@ from pathlib import Path
 from fpdf import FPDF
 
 from app import quotes
-from app.config import get_settings
+from app.config import company_profiles
 
 _LOGO = Path(__file__).parent / "static" / "compujob-logo.png"
 _WA = Path(__file__).parent / "static" / "whatsapp.png"   # icone no lugar de "Cel:" (celular = WhatsApp)
@@ -72,8 +72,6 @@ def render_quote_pdf(quote: dict) -> bytes:
     pdf.set_margins(15, 14, 15)
     pdf.add_page()
 
-    cfg = get_settings()
-
     # ---- header: logo + empresa (esq) | ORCAMENTO/No/data (dir) -----------
     top = pdf.get_y()
     if _LOGO.exists():
@@ -84,7 +82,17 @@ def render_quote_pdf(quote: dict) -> bytes:
     pdf.set_xy(41, top)
     pdf.set_font("Helvetica", "B", 15)
     pdf.set_text_color(*_DARK)
-    company = _safe((quote.get("companyName") or "").strip() or cfg.company_name or "CompuJob")
+    # empresa VENDEDORA: usa o snapshot salvo no orcamento (o vendedor escolheu qual empresa vende).
+    # `snap`=orcamento ja salvo com os campos novos -> respeita vazios (ex.: empresa 2 sem endereco).
+    # Sem snapshot (orcamento antigo) -> cai no perfil 1 do .env. Todos opcionais.
+    prof0 = company_profiles()[0]
+    snap = any(k in quote for k in ("companyAddress", "companyPhone", "companyMobile"))
+    cname = (quote.get("companyName") or "").strip() or prof0.get("name") or "CompuJob"
+    addr = (quote.get("companyAddress") or "").strip() or ("" if snap else prof0.get("address", ""))
+    phone = (quote.get("companyPhone") or "").strip() or ("" if snap else prof0.get("phone", ""))
+    mobile = (quote.get("companyMobile") or "").strip() or ("" if snap else prof0.get("mobile", ""))
+    comp_cnpj = (quote.get("companyCnpj") or "").strip() or ("" if snap else prof0.get("cnpj", ""))
+    company = _safe(cname)
     cw = 76   # espaco antes do bloco ORCAMENTO (x=120): encolhe a fonte e, no limite, trunca
     csize = 15
     while csize > 9 and pdf.get_string_width(company) > cw:
@@ -95,12 +103,6 @@ def render_quote_pdf(quote: dict) -> bytes:
             company = company[:-1]
         company += "..."
     pdf.cell(cw, 8, company, ln=1)
-    # linhas de contato: endereco, telefones (celular com icone do WhatsApp no lugar de "Cel:"),
-    # e CNPJ da empresa (editavel; default = .env). So as preenchidas aparecem.
-    addr = (cfg.company_address or "").strip()
-    phone = (cfg.company_phone or "").strip()
-    mobile = (cfg.company_mobile or "").strip()
-    comp_cnpj = (quote.get("companyCnpj") or "").strip() or (cfg.company_cnpj or "").strip()
     pdf.set_font("Helvetica", size=8.5)
     pdf.set_text_color(*_MUTED)
     iy = top + 8.5

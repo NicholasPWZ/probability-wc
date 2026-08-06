@@ -50,11 +50,14 @@ async def index():
 # --------------------------------------------------------------------------
 @compubot.get("/api/config")
 async def api_config(request: Request):
+    from app.config import company_profiles
+    profs = company_profiles()
     return {
         "authed": auth.valid_session(request.cookies.get(auth.COOKIE_NAME)),
         "appConfigured": bool(get_settings().app_password),
-        "company": get_settings().company_name or "CompuJob",   # default editavel do nome da empresa
-        "companyCnpj": get_settings().company_cnpj or "",       # default editavel do CNPJ da empresa
+        "companies": profs,                        # empresas vendedoras (seletor); 1a = default
+        "company": profs[0]["name"] if profs else "CompuJob",   # compat
+        "companyCnpj": profs[0]["cnpj"] if profs else "",       # compat
     }
 
 

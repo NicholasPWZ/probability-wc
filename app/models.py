@@ -44,8 +44,12 @@ class QuoteRequest(BaseModel):
     id: str | None = None          # present = update; absent = create (gets a new number)
     title: str = ""                # nome do cliente
     clientLines: list[str] = []    # linhas livres do cliente (endereco, CNPJ, contato...) - saem no PDF
-    companyName: str = ""          # nome da empresa no cabecalho (editavel; default = .env COMPANY_NAME)
-    companyCnpj: str = ""           # CNPJ da empresa no cabecalho (editavel; default = .env COMPANY_CNPJ)
+    # snapshot da EMPRESA VENDEDORA escolhida (seletor preenche do .env; tudo editavel e opcional)
+    companyName: str = ""
+    companyCnpj: str = ""
+    companyAddress: str = ""
+    companyPhone: str = ""
+    companyMobile: str = ""
     seller: str = ""               # nome do vendedor
     sellerEmail: str = ""          # e-mail corporativo do vendedor
     notes: str = ""                # observacoes (printed on the PDF)
