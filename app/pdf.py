@@ -152,10 +152,11 @@ def render_quote_pdf(quote: dict) -> bytes:
     # ---- cliente | vendedor (blocos opcionais, altura dinamica) ----------
     client = (quote.get("title") or "").strip()
     client_lines = [str(x).strip() for x in (quote.get("clientLines") or []) if str(x).strip()]
-    if not client_lines:   # fallback p/ orcamentos antigos (endereco/CNPJ fixos)
-        legacy = [quote.get("clientAddress"),
-                  ("CNPJ: " + quote["clientCnpj"]) if (quote.get("clientCnpj") or "").strip() else ""]
-        client_lines = [str(x).strip() for x in legacy if str(x).strip()]
+    if not client_lines:   # fallback p/ orcamentos antigos (endereco/CNPJ fixos); guarda None/vazio
+        if (quote.get("clientAddress") or "").strip():
+            client_lines.append(quote["clientAddress"].strip())
+        if (quote.get("clientCnpj") or "").strip():
+            client_lines.append("CNPJ: " + quote["clientCnpj"].strip())
     seller = (quote.get("seller") or "").strip()
     seller_email = (quote.get("sellerEmail") or "").strip()
     if client or client_lines or seller or seller_email:
