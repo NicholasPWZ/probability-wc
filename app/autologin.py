@@ -54,6 +54,12 @@ RECIPES: dict[str, dict] = {
         "domain": "vendas.agis.com.br",
         "success": lambda page: "/customer/account/login" not in (page.url or ""),
     },
+    "reatacado": {  # OpenCart: form de login padrao (submit por Enter). Sucesso = saiu do /login.
+        "loginUrl": "https://www.reatacado.com.br/index.php?route=account/login",
+        "user": "#input-email", "pw": "#input-password",
+        "domain": "reatacado.com.br",
+        "success": lambda page: "account/login" not in (page.url or ""),
+    },
     "braile": {  # WMW SPA, login num modal (abre por um trigger no header)
         "loginUrl": "https://www.brailedistribuidora.com.br/",
         # o click do Playwright nao abre o modal de forma confiavel; um .click() nativo no

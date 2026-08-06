@@ -51,6 +51,16 @@ SEED = [
                 "authMode": "none", "pageParam": "pagina", "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
                 "selectors": {"item": "li.span4", "name": ".nome-produto", "price": ".preco-promocional",
                               "link": "a", "image": "img", "stock": ""}}},
+    # RE Atacado (OpenCart). Loja de ATACADO: preco so aparece LOGADO -> authMode cookie (revendedor
+    # cola o cookie). Busca server-rendered: index.php?route=product/search&search={q}; cards em
+    # .product-thumb; preco em .price (o novo vem primeiro, entao parse_price pega o preco de venda);
+    # paginacao por &page=N. Imagem real no src (image/cache/...).
+    {"key": "reatacado", "kind": "generic", "name": "RE Atacado",
+     "baseUrl": "https://www.reatacado.com.br",
+     "config": {"searchUrl": "https://www.reatacado.com.br/index.php?route=product/search&search={q}",
+                "authMode": "cookie", "pageParam": "page", "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
+                "selectors": {"item": ".product-thumb", "name": ".caption h4 a", "price": ".price",
+                              "link": ".caption h4 a", "image": ".image img", "stock": ""}}},
     # Agis (Magento B2B). PRECO carregado por JS (POST /integration/listing/price) -> adapter em
     # CODIGO (app/suppliers/agis.py), nao generic. Auth por cookie + auto-login (receita em autologin.py).
     {"key": "agis", "kind": "builtin", "name": "Agis", "baseUrl": "https://vendas.agis.com.br"},
