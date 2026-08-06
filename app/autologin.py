@@ -54,11 +54,14 @@ RECIPES: dict[str, dict] = {
         "domain": "vendas.agis.com.br",
         "success": lambda page: "/customer/account/login" not in (page.url or ""),
     },
-    "reatacado": {  # OpenCart: form de login padrao (submit por Enter). Sucesso = saiu do /login.
+    "reatacado": {  # OpenCart: login por HTTP (curl_cffi), NAO Camoufox — o Firefox do Camoufox toma
+        # NS_ERROR_NET_EMPTY_RESPONSE (anti-bot derruba a conexao); curl_cffi impersonate=chrome passa.
+        # POST simples email/password, sem captcha. Sucesso = saiu de account/login.
+        "http": True,
         "loginUrl": "https://www.reatacado.com.br/index.php?route=account/login",
-        "user": "#input-email", "pw": "#input-password",
+        "userField": "email", "passField": "password",
         "domain": "reatacado.com.br",
-        "success": lambda page: "account/login" not in (page.url or ""),
+        "success": lambda url, html: "account/login" not in (url or ""),
     },
     "braile": {  # WMW SPA, login num modal (abre por um trigger no header)
         "loginUrl": "https://www.brailedistribuidora.com.br/",
@@ -71,6 +74,64 @@ RECIPES: dict[str, dict] = {
         "success": lambda page: True,
     },
 }
+
+
+_UA_CHROME = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/149.0.0.0 Safari/537.36")
+
+
+def _http_login(key: str, recipe: dict, user: str, pwd: str) -> str | None:
+    """Login SEM navegador (curl_cffi impersonate=chrome) — p/ sites cujo anti-bot derruba o Camoufox
+    mas aceitam o fingerprint TLS do Chrome. GET a pagina de login (pega cookies/hidden fields), POST
+    email/senha, valida via recipe['success'](url, html). Retorna o cookie jar so em caso de sucesso."""
+    from urllib.parse import urlparse
+    from bs4 import BeautifulSoup
+    from curl_cffi import requests as creq
+    s = creq.Session(impersonate="chrome", timeout=get_settings().request_timeout)
+    s.headers.update({"user-agent": _UA_CHROME, "accept-language": "pt-BR,pt;q=0.9,en;q=0.8",
+                      "accept": "text/html,application/xhtml+xml,*/*;q=0.8"})
+    login_url = recipe["loginUrl"]
+    g = s.get(login_url)
+    # monta os dados do form (inclui hidden/CSRF, se houver, p/ robustez entre versoes)
+    data: dict = {}
+    action = login_url
+    try:
+        forms = [f for f in BeautifulSoup(g.text, "html.parser").find_all("form")
+                 if f.find("input", {"type": "password"})]
+        if forms:
+            action = forms[0].get("action") or login_url
+            for inp in forms[0].find_all("input"):
+                n = inp.get("name")
+                if n and inp.get("type") != "submit":
+                    data[n] = inp.get("value") or ""
+    except Exception:
+        pass
+    data[recipe.get("userField", "email")] = user
+    data[recipe.get("passField", "password")] = pwd
+    u = urlparse(login_url)
+    r = s.post(action, data=data,
+               headers={"referer": login_url, "origin": f"{u.scheme}://{u.netloc}",
+                        "content-type": "application/x-www-form-urlencoded"})
+    try:
+        ok = bool(recipe["success"](r.url or "", r.text or ""))
+    except Exception:
+        ok = True
+    if ok:
+        _last_error.pop(key, None)
+    else:
+        msg = ""
+        try:
+            for sel in (".alert-danger", ".alert", ".text-danger", ".warning"):
+                el = BeautifulSoup(r.text, "html.parser").select_one(sel)
+                if el and el.get_text(strip=True):
+                    msg = el.get_text(" ", strip=True)[:140]
+                    break
+        except Exception:
+            pass
+        _last_error[key] = msg or "login nao confirmado"
+        return None   # nao persiste cookie de visitante
+    jar = "; ".join(f"{k}={v}" for k, v in s.cookies.items() if v is not None)
+    return jar or None
 
 
 def _dismiss_cookie(page) -> None:
@@ -127,6 +188,19 @@ def login(key: str, watch: bool = False) -> str | None:
         print(f"[autologin] {key}: sem credenciais no .env ({key.upper()}_USER/_PASS)")
         _last_error[key] = "sem credenciais no .env"
         return None
+    # receita HTTP (curl_cffi, sem navegador) — p/ sites que bloqueiam o Camoufox
+    if recipe.get("http"):
+        lock = _lock(key)
+        if not lock.acquire(blocking=False):
+            return None
+        try:
+            return _http_login(key, recipe, user, pwd)
+        except Exception as exc:
+            print(f"[autologin] {key} (http) falhou: {exc}")
+            _last_error[key] = f"erro no login: {exc}"
+            return None
+        finally:
+            lock.release()
     lock = _lock(key)
     if not lock.acquire(blocking=False):
         return None  # a login is already in progress for this supplier
