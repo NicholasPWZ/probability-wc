@@ -61,7 +61,8 @@ RECIPES: dict[str, dict] = {
         "loginUrl": "https://www.reatacado.com.br/index.php?route=account/login",
         "userField": "email", "passField": "password",
         "domain": "reatacado.com.br",
-        "success": lambda url, html: "account/login" not in (url or ""),
+        # logado = a pagina tem link de logout (guest so tem login/register). Robusto (independe de redirect).
+        "success": lambda url, html: "account/logout" in (html or "").lower(),
     },
     "braile": {  # WMW SPA, login num modal (abre por um trigger no header)
         "loginUrl": "https://www.brailedistribuidora.com.br/",
@@ -109,11 +110,19 @@ def _http_login(key: str, recipe: dict, user: str, pwd: str) -> str | None:
     data[recipe.get("userField", "email")] = user
     data[recipe.get("passField", "password")] = pwd
     u = urlparse(login_url)
-    r = s.post(action, data=data,
+    r = s.post(action, data=data, allow_redirects=True,
                headers={"referer": login_url, "origin": f"{u.scheme}://{u.netloc}",
                         "content-type": "application/x-www-form-urlencoded"})
+    # confirma o login na pagina de conta (mais confiavel que a URL: independe de seguir o 302)
+    acc = None
     try:
-        ok = bool(recipe["success"](r.url or "", r.text or ""))
+        acc = s.get(f"{u.scheme}://{u.netloc}/index.php?route=account/account")
+    except Exception:
+        pass
+    chk_url = (acc.url if acc is not None else r.url) or ""
+    chk_html = (acc.text if acc is not None else r.text) or ""
+    try:
+        ok = bool(recipe["success"](chk_url, chk_html))
     except Exception:
         ok = True
     if ok:
