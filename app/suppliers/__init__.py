@@ -43,6 +43,14 @@ SEED = [
                 "authMode": "none", "pageParam": "pg", "priceLocale": "br", "linkAttr": "href", "imageAttr": "src",
                 "selectors": {"item": ".product", "name": ".product-name", "price": ".current-price",
                               "link": ".product-info", "image": ".image img", "stock": ""}}},
+    # Sul Cell (Tray, loja=1411756). Preco PUBLICO (sem login) -> authMode none, sem token. Imagem real
+    # no data-src (o src e placeholder empty.png/lazyload). Mesmos seletores Tray do gaucha/multimarcas.
+    {"key": "sulcell", "kind": "generic", "name": "Sul Cell",
+     "baseUrl": "https://www.sulcell.com.br",
+     "config": {"searchUrl": "https://www.sulcell.com.br/loja/busca.php?loja=1411756&palavra_busca={q}",
+                "authMode": "none", "pageParam": "pg", "priceLocale": "br", "linkAttr": "href", "imageAttr": "data-src",
+                "selectors": {"item": ".product", "name": ".product-name", "price": ".current-price",
+                              "link": ".product-info", "image": ".image img", "stock": ""}}},
     # Mercadao da Informatica (Loja Integrada). Preco PUBLICO (sem login) -> authMode none. Card da
     # listagem e li.span4; preco em .preco-promocional; imagem real no src (CDN awsli).
     {"key": "mercadao", "kind": "generic", "name": "Mercadao da Informatica",
